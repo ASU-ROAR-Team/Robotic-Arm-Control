@@ -195,7 +195,7 @@
 
 <ros2_control name="RobotSystem" type="system">
     <hardware>
-      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      <plugin>mock_components/GenericSystem</plugin>
     </hardware>
 
     <joint name="Joint_1">
@@ -229,10 +229,11 @@
       <state_interface name="velocity"/>
     </joint>
   </ros2_control>
-
+  <!-->
   <gazebo>
     <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
       <parameters>/home/ahmed/Robotics-Project-main/install/my_robot_arm_pkg/share/my_robot_arm_pkg/config/joint_controllers.yaml</parameters>
     </plugin>
   </gazebo>
+  <-->
 </robot>

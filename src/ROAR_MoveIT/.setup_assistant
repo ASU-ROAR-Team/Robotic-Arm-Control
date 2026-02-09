@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: ROAR_pkg
+    relative_path: urdf/New_URDF.urdf
+  srdf:
+    relative_path: config/New_URDF.srdf
+  package_settings:
+    author_name: ahmed
+    author_email: ahmed@todo.todo
+    generated_timestamp: 1770643468
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
