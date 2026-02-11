@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="New_URDF">
+
+  <link name="world"/>
+  
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+  
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.3668 -0.3966 0.0019" rpy="0 0 0" />
+      <mass value="1.155" />
+      <inertia ixx="0.0056" ixy="0" ixz="0" iyy="0.0056" iyz="0" izz="0.0078" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/base_link.STL" />
+      </geometry>
+      <material name="grey"><color rgba="0.7 0.7 0.7 1.0"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="Link_1">
+    <visual>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_1.STL" />
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_1.STL" />
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.56" />
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.0009" iyz="0" izz="0.001" />
+    </inertial>
+  </link>
+  
+  <joint name="Joint_1" type="revolute">
+    <origin xyz="-0.3668 -0.3966 0.0704" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="Link_1" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_2">
+    <visual>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_2.STL" />
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_2.STL" />
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.37" />
+      <inertia ixx="0.003" ixy="0" ixz="0" iyy="0.003" iyz="0" izz="0.006" />
+    </inertial>
+  </link>
+
+  <joint name="Joint_2" type="revolute">
+    <origin xyz="0.0164 -0.0314 0.1531" rpy="1.5708 0 2.0525" />
+    <parent link="Link_1" />
+    <child link="Link_2" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-2.4435" upper="0.0" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_3">
+    <visual>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_3.STL" />
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_3.STL" />
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.22" />
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001" />
+    </inertial>
+  </link>
+
+  <joint name="Joint_3" type="revolute">
+    <origin xyz="0.2938 0.2713 0" rpy="3.1416 0 3.1416" />
+    <parent link="Link_2" />
+    <child link="Link_3" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_4">
+    <visual>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_4.STL" />
+      </geometry>
+      <material name="silver"><color rgba="0.8 0.8 0.8 1.0"/></material>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_4.STL" />
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.10" />
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.00005" />
+    </inertial>
+  </link>
+
+  <joint name="Joint_4" type="revolute">
+    <origin xyz="-0.2498 -0.2665 0" rpy="0 0 0" />
+    <parent link="Link_3" />
+    <child link="Link_4" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_5">
+    <visual>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_5.STL" />
+      </geometry>
+      <material name="blue"><color rgba="0.0 0.0 0.8 1.0"/></material>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_5.STL" />
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.50" />
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.003" iyz="0" izz="0.003" />
+    </inertial>
+  </link>
+
+  <joint name="Joint_5" type="revolute">
+    <origin xyz="-0.0419 -0.0456 0" rpy="1.5708 1.203 -0.742" />
+    <parent link="Link_4" />
+    <child link="Link_5" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-1.5708" upper="1.5708" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_EE">
+    <visual>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_EE.STL" />
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://ROAR_pkg/meshes/Link_EE.STL" />
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.18" />
+      <inertia ixx="0.0002" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0003" />
+    </inertial>
+  </link>
+
+  <joint name="Joint_EE" type="prismatic">
+    <origin xyz="-0.0356 0.0137 0.0836" rpy="1.5708 0.742 1.203" />
+    <parent link="Link_5" />
+    <child link="Link_EE" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-0.1173" upper="0.0" effort="10.0" velocity="1.0" />
+  </joint>
+
+  <ros2_control name="GazeboSimSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+
+    <joint name="Joint_1">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_2">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_3">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_4">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_5">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_EE">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+    <parameters>package://ROAR_MoveIT/config/ros2_controllers.yaml</parameters>    </plugin>
+  </gazebo>
+
+</robot>
