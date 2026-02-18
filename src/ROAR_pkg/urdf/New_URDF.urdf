@@ -195,7 +195,7 @@
 
 <ros2_control name="RobotSystem" type="system">
     <hardware>
-      <plugin>ign_ros2_control/GazeboSimSystem</plugin>
+      <plugin>ign_ros2_control/IgnitionSystem</plugin>
     </hardware>
 
     <joint name="Joint_1">
@@ -231,9 +231,9 @@
   </ros2_control>
 
   <gazebo>
-  <plugin filename="ign_ros2_control-system" name="ign_ros2_control::GazeboSimROS2ControlPlugin">
-    <parameters>package://ROAR_MoveIT/config/ros2_controllers.yaml</parameters>
-  </plugin>
-</gazebo>
+    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+      <parameters>package://ROAR_MoveIT/config/ros2_controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
 
 </robot>
