@@ -1,7 +1,6 @@
 import os
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, RegisterEventHandler, ExecuteProcess
-from launch.event_handlers import OnProcessExit
+from launch.actions import IncludeLaunchDescription, ExecuteProcess, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -10,7 +9,7 @@ def generate_launch_description():
     # --- 1. GET DYNAMIC PACKAGE PATHS ---
     pkg_roar_pkg = get_package_share_directory('ROAR_pkg')
     pkg_roar_moveit = get_package_share_directory('ROAR_MoveIT')
-    pkg_ros_gz = get_package_share_directory('ros_gz_sim')
+    pkg_ros_ign = get_package_share_directory('ros_ign_gazebo')
 
     # --- 2. DEFINE PATHS ---
     # The raw URDF file
@@ -43,14 +42,14 @@ def generate_launch_description():
     # Launch Gazebo with an empty world
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_ros_gz, 'launch', 'gz_sim.launch.py')
+            os.path.join(pkg_ros_ign, 'launch', 'ign_gazebo.launch.py')
         ),
-        launch_arguments={'gz_args': '-r empty.sdf'}.items(),
+        launch_arguments={'ign_args': '-r empty.sdf'}.items(),
     )
 
     # --- 5. SPAWN THE ROBOT ---
     spawn_entity = Node(
-        package='ros_gz_sim',
+        package='ros_ign_gazebo',
         executable='create',
         arguments=['-name', 'New_ROAR_Arm',
                    '-string', robot_desc_content, # Pass the processed string directly!
@@ -68,11 +67,11 @@ def generate_launch_description():
 
     # --- 7. BRIDGE (ROS <-> GAZEBO) ---
     bridge = Node(
-        package='ros_gz_bridge',
+        package='ros_ign_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            '/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model',
+            '/clock@rosgraph_msgs/msg/Clock[ign.msgs.Clock]',
+            '/joint_states@sensor_msgs/msg/JointState[ign.msgs.Model]',
         ],
         output='screen'
     )
@@ -98,12 +97,10 @@ def generate_launch_description():
         arguments=["EE_controller_controller"],
     )
 
-    # This creates the delay logic
-    delay_controllers = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=spawn_entity,
-            on_exit=[joint_state_broadcaster, arm_controller, ee_controller],
-        )
+    # Delay controllers slightly to ensure the robot is spawned in Gazebo
+    delay_controllers = TimerAction(
+        period=3.0,
+        actions=[joint_state_broadcaster, arm_controller, ee_controller],
     )
 
     return LaunchDescription([
