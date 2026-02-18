@@ -1,18 +1,3 @@
-# ROS 2 Build Artifacts
 build/
 install/
 log/
-
-# Python-specific (if using python nodes)
-__pycache__/
-*.pyc
-*.pyo
-
-# IDE-specific (optional but recommended)
-.vscode/
-.idea/
-.DS_Store
-
-# Compiled binaries and libraries
-*.so
-*.a
