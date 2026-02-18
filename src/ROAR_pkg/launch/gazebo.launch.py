@@ -1,111 +1,107 @@
-from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
-from launch_ros.actions import Node
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from ament_index_python.packages import get_package_share_directory
 import os
+import tempfile
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription, TimerAction, RegisterEventHandler
+from launch.event_handlers import OnProcessExit
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
-    # Package Directories
-    pkg_desc = get_package_share_directory('ROAR_pkg')
-    pkg_moveit = get_package_share_directory('ROAR_MoveIT')
-    pkg_ros_gz = get_package_share_directory('ros_gz_sim')
+    # --- 1. GET DYNAMIC PACKAGE PATHS ---
+    pkg_roar_pkg = get_package_share_directory('ROAR_pkg')
+    pkg_roar_moveit = get_package_share_directory('ROAR_MoveIT')
+    pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
-    # 1. Setup Paths
-    urdf_path = os.path.join(pkg_desc, 'urdf', 'New_URDF.urdf') 
+    # --- 2. DEFINE PATHS ---
+    urdf_file_path = os.path.join(pkg_roar_pkg, 'urdf', 'New_URDF.urdf')
+    meshes_path = os.path.join(pkg_roar_pkg, 'meshes')
+    controllers_yaml_path = os.path.join(pkg_roar_moveit, 'config', 'ros2_controllers.yaml')
+
+    # --- 3. PROCESS URDF ---
+    # We read the URDF and fix the paths
+    with open(urdf_file_path, 'r') as file:
+        robot_desc_content = file.read()
     
-    # Absolute path to the YAML file in the MoveIT package
-    controller_yaml_absolute = os.path.join(pkg_moveit, "config", "ros2_controllers.yaml")
-    
-    # Absolute path to the meshes
-    mesh_absolute_path = os.path.join(pkg_desc, 'meshes')
+    # Replace package:// with file:// for Gazebo
+    robot_desc_content = robot_desc_content.replace('package://ROAR_pkg/meshes', 'file://' + meshes_path)
+    robot_desc_content = robot_desc_content.replace('package://ROAR_MoveIT/config/ros2_controllers.yaml', controllers_yaml_path)
 
-    # 2. Process URDF
-    # We read the file and replace the 'package://' paths with absolute paths
-    # so Gazebo/ros2_control can find them without error.
-    with open(urdf_path, 'r') as urdf_file:
-        robot_desc_raw = urdf_file.read()
+    # --- CRITICAL FIX: Write to Temp File ---
+    # This prevents the "Syntax error: newline unexpected" crash
+    tmp_urdf = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.urdf')
+    tmp_urdf.write(robot_desc_content)
+    tmp_urdf.close()
+    tmp_urdf_path = tmp_urdf.name
 
-    # The strings below MUST match exactly what is written in your New_URDF.urdf
-    robot_description = robot_desc_raw.replace(
-        "package://ROAR_pkg/meshes",
-        mesh_absolute_path
-    ).replace(
-        "package://ROAR_MoveIT/config/ros2_controllers.yaml",
-        controller_yaml_absolute
-    )
-
-    # 3. Start Gazebo
+    # --- 4. GAZEBO SIMULATION (FORTRESS MODE) ---
+    # We use ros_gz_sim, but with GZ_VERSION=fortress set in terminal, it runs Fortress.
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_ros_gz, 'launch', 'gz_sim.launch.py')
+            os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
         launch_arguments={'gz_args': '-r empty.sdf'}.items(),
     )
 
-    # 4. Robot State Publisher
-    robot_state_publisher_node = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        parameters=[{'robot_description': robot_description, 'use_sim_time': True}],
-        output='screen'
-    )
-    
-    # 5. Spawn Robot
+    # --- 5. SPAWN THE ROBOT ---
     spawn_entity = Node(
-        package='ros_gz_sim',
+        package='ros_gz_sim', 
         executable='create',
-        arguments=['-name', 'robot_New_URDF', 
-                   '-topic', '/robot_description'],
+        arguments=['-name', 'New_ROAR_Arm',
+                   '-file', tmp_urdf_path, # Load from file, not string!
+                   '-x', '0', '-y', '0', '-z', '0.1'],
         output='screen',
     )
 
-    # 6. Bridge
-    # Note: Using 'robot_New_URDF' to match the spawn name
+    # --- 6. ROBOT STATE PUBLISHER ---
+    node_robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        output='screen',
+        parameters=[{'robot_description': robot_desc_content, 'use_sim_time': True}]
+    )
+
+    # --- 7. BRIDGE (ROS <-> FORTRESS) ---
+    # Since we are in Fortress mode, we map to ign.msgs
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
-            '/world/empty/model/robot_New_URDF/joint_state@sensor_msgs/msg/JointState[gz.msgs.Model',
-        ],
-        remappings=[
-            ('/world/empty/model/robot_New_URDF/joint_state', 'joint_states'),
+            '/clock@rosgraph_msgs/msg/Clock[ign.msgs.Clock',
+            '/joint_states@sensor_msgs/msg/JointState[ign.msgs.Model',
         ],
         output='screen'
     )
 
-    # 7. Spawners
-    load_joint_state_broadcaster = Node(
+    # --- 8. CONTROLLERS ---
+    joint_state_broadcaster = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["joint_state_broadcaster"],
-        output="screen"
     )
 
-    # Corrected name to match your YAML
-    load_arm_group_controller = Node(
+    arm_controller = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["arm_controller_controller"],
-        output="screen"
     )
 
-    # Corrected name to match your YAML
-    load_hand_group_controller = Node(
+    ee_controller = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["EE_controller_controller"],
-        output="screen"
     )
-    
+
+    # Delay controllers to make sure robot is spawned first
+    delay_controllers = TimerAction(
+        period=5.0, 
+        actions=[joint_state_broadcaster, arm_controller, ee_controller],
+    )
 
     return LaunchDescription([
         gazebo,
-        robot_state_publisher_node,
+        node_robot_state_publisher,
         spawn_entity,
         bridge,
-        load_joint_state_broadcaster,
-        load_arm_group_controller,
-        load_hand_group_controller,
+        delay_controllers
     ])
