@@ -6,9 +6,9 @@
     <xacro:include filename="$(find ROAR_pkg)/urdf/New_URDF.urdf" />
 
     <!-- Import control_xacro -->
-    <!--<xacro:include filename="New_URDF.ros2_control.xacro" />
+    <xacro:include filename="New_URDF.ros2_control.xacro" />
 
 
-    <xacro:New_URDF_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>-->
+    <xacro:New_URDF_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
 
 </robot>

@@ -27,7 +27,6 @@ arm_controller_controller:
     state_interfaces:
       - position
       - velocity
-    allow_nonzero_velocity_at_trajectory_end: true
 EE_controller_controller:
   ros__parameters:
     joints:
@@ -37,4 +36,3 @@ EE_controller_controller:
     state_interfaces:
       - position
       - velocity
-    allow_nonzero_velocity_at_trajectory_end: true
