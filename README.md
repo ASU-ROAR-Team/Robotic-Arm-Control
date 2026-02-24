@@ -68,4 +68,3 @@ python3 src/ROAR_pkg/scripts/macro_orientation_teleop.py
 - If TF lookup fails, the scripts will log an error and ignore the command.
 - If MoveIt rejects a goal, check the planner/scene and joint limits.
 
-If you want, I can now commit these files and push them to your GitHub—please provide the repository URL (HTTPS or SSH) to use for the `origin` remote, or tell me to use the existing remote if already configured.
