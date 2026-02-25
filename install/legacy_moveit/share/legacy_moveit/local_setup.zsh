@@ -1,1 +1,0 @@
-/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit/ament_cmake_environment_hooks/local_setup.zsh

@@ -1,4 +1,0 @@
-source;share/legacy_moveit/local_setup.bash
-source;share/legacy_moveit/local_setup.dsv
-source;share/legacy_moveit/local_setup.sh
-source;share/legacy_moveit/local_setup.zsh

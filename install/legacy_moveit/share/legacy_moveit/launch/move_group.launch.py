@@ -1,1 +1,0 @@
-/home/roar/new_arm/old_ROAR_arm/src/legacy_moveit/launch/move_group.launch.py
