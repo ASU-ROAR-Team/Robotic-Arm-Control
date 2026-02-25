@@ -17,10 +17,15 @@ Usage:
 
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionClient
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from moveit_msgs.srv import GetPositionFK
 from moveit_msgs.msg import RobotState
+from moveit_msgs.action import MoveGroup
+from moveit_msgs.msg import Constraints, PositionConstraint, JointConstraint
+from shape_msgs.msg import SolidPrimitive
+from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 import numpy as np
 import argparse, math
@@ -39,6 +44,8 @@ JOINT_NAMES  = list(JOINT_LIMITS.keys())
 EE_LINK      = "Link_5"
 BASE_FRAME   = "base_link"
 WORLD_FRAME  = "world"
+GROUP_NAME   = "arm_controller"
+LOCK_TOL     = 0.05
 # =====================================================================
 
 
@@ -48,6 +55,7 @@ class WorkspaceChecker(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.fk_client = self.create_client(GetPositionFK, "/compute_fk")
+        self.move_client = ActionClient(self, MoveGroup, "move_action")
         self.current_joints: dict[str, float] = {}
         self.js_received = False
         self.create_subscription(
@@ -111,28 +119,130 @@ class WorkspaceChecker(Node):
             self.get_logger().error(f"TF failed: {e}")
             return None
 
+    def _pos_constraint(self, x: float, y: float, z: float, tol: float = 0.01):
+        pc = PositionConstraint()
+        pc.header.frame_id = WORLD_FRAME
+        pc.link_name = EE_LINK
+        pc.weight = 1.0
+        box = SolidPrimitive()
+        box.type = SolidPrimitive.BOX
+        box.dimensions = [tol, tol, tol]
+        pc.constraint_region.primitives.append(box)
+        tp = PoseStamped()
+        tp.header.frame_id = WORLD_FRAME
+        tp.pose.position.x = x
+        tp.pose.position.y = y
+        tp.pose.position.z = z
+        tp.pose.orientation.w = 1.0
+        pc.constraint_region.primitive_poses.append(tp.pose)
+        return pc
+
+    def _lock_constraints(self, lock: bool):
+        if not lock:
+            return []
+        out = []
+        for jn in ["Joint_4", "Joint_5"]:
+            jc = JointConstraint()
+            jc.joint_name = jn
+            jc.position = self.current_joints.get(jn, 0.0)
+            jc.tolerance_above = LOCK_TOL
+            jc.tolerance_below = LOCK_TOL
+            jc.weight = 1.0
+            out.append(jc)
+        return out
+
+    def _plan_only_reachable(self, tx: float, ty: float, tz: float, lock: bool) -> bool:
+        if not self.move_client.wait_for_server(timeout_sec=2.0):
+            return False
+
+        goal = MoveGroup.Goal()
+        goal.request.group_name = GROUP_NAME
+        goal.request.allowed_planning_time = 1.5
+        goal.request.num_planning_attempts = 5
+        goal.request.max_velocity_scaling_factor = 0.3
+        goal.request.max_acceleration_scaling_factor = 0.3
+
+        c = Constraints()
+        c.position_constraints.append(self._pos_constraint(tx, ty, tz, tol=0.01))
+        c.joint_constraints.extend(self._lock_constraints(lock))
+        goal.request.goal_constraints.append(c)
+        goal.planning_options.plan_only = True
+
+        goal_future = self.move_client.send_goal_async(goal)
+        rclpy.spin_until_future_complete(self, goal_future, timeout_sec=3.0)
+        if not goal_future.done() or goal_future.result() is None:
+            return False
+        goal_handle = goal_future.result()
+        if not goal_handle.accepted:
+            return False
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future, timeout_sec=5.0)
+        if not result_future.done() or result_future.result() is None:
+            return False
+        return result_future.result().result.error_code.val == 1
+
+    def _max_plan_valid_translation(self, cx: float, cy: float, cz: float,
+                                    axis: str, sign: float, fk_cap_m: float,
+                                    lock: bool) -> float:
+        if fk_cap_m <= 0.0:
+            return 0.0
+
+        def target_at(dist):
+            if axis == "x":
+                return (cx + sign * dist, cy, cz)
+            if axis == "y":
+                return (cx, cy + sign * dist, cz)
+            return (cx, cy, cz + sign * dist)
+
+        low, high = 0.0, fk_cap_m
+
+        # Early fail check on tiny move
+        tiny = min(0.01, fk_cap_m)
+        tx, ty, tz = target_at(tiny)
+        if not self._plan_only_reachable(tx, ty, tz, lock):
+            return 0.0
+
+        # If upper bound also works, we're done
+        tx, ty, tz = target_at(high)
+        if self._plan_only_reachable(tx, ty, tz, lock):
+            return high
+
+        for _ in range(8):
+            mid = 0.5 * (low + high)
+            tx, ty, tz = target_at(mid)
+            if self._plan_only_reachable(tx, ty, tz, lock):
+                low = mid
+            else:
+                high = mid
+        return low
+
     def run(self, n_samples: int, lock=False, minimal=False):
-        print("\n" + "═"*60)
-        print("  ROAR Arm Workspace Checker")
-        print("═"*60)
+        if not minimal:
+            print("\n" + "═"*60)
+            print("  ROAR Arm Workspace Checker")
+            print("═"*60)
 
         # Wait for joint states
-        print("\n  Waiting for joint states...")
+        if not minimal:
+            print("\n  Waiting for joint states...")
         if not self.wait_for_joints():
             print("  ERROR: No joint states received. Is the robot running?")
             return
 
         # Current EE position
-        print("  Getting current EE position...")
+        if not minimal:
+            print("  Getting current EE position...")
         rclpy.spin_once(self, timeout_sec=1.0)
         current_pos = self.get_current_ee_pos()
 
         if current_pos:
             cx, cy, cz = current_pos
-            print(f"\n  Current EE position (world frame):")
-            print(f"    x = {cx:.4f} m")
-            print(f"    y = {cy:.4f} m")
-            print(f"    z = {cz:.4f} m")
+            if not minimal:
+                print(f"\n  Current EE position (world frame):")
+                print(f"    x = {cx:.4f} m")
+                print(f"    y = {cy:.4f} m")
+                print(f"    z = {cz:.4f} m")
         else:
             cx = cy = cz = 0.0
             print("  WARNING: Could not get current EE position")
@@ -140,31 +250,34 @@ class WorkspaceChecker(Node):
         print("\n" + "─"*60)
         print("  KEY RESULT 1: ROTATION HEADROOM")
         print("─"*60)
-        print(f"  Joint state + remaining rotation:")
-        for jn in JOINT_NAMES:
-            v = self.current_joints.get(jn, 0.0)
-            lo, hi = JOINT_LIMITS[jn]
-            pct_lo = 100 * (v - lo) / (hi - lo) if hi != lo else 0
-            room_neg = math.degrees(v - lo)
-            room_pos = math.degrees(hi - v)
-            print(f"    {jn}: {v:+.4f} rad ({math.degrees(v):+.1f}°)  "
-                  f"[{math.degrees(lo):.0f}° to {math.degrees(hi):.0f}°]  "
-                  f"at {pct_lo:.0f}% | remaining: -{room_neg:.1f}° / +{room_pos:.1f}°")
+        if not minimal:
+            print(f"  Joint state + remaining rotation:")
+            for jn in JOINT_NAMES:
+                v = self.current_joints.get(jn, 0.0)
+                lo, hi = JOINT_LIMITS[jn]
+                pct_lo = 100 * (v - lo) / (hi - lo) if hi != lo else 0
+                room_neg = math.degrees(v - lo)
+                room_pos = math.degrees(hi - v)
+                print(f"    {jn}: {v:+.4f} rad ({math.degrees(v):+.1f}°)  "
+                      f"[{math.degrees(lo):.0f}° to {math.degrees(hi):.0f}°]  "
+                      f"at {pct_lo:.0f}% | remaining: -{room_neg:.1f}° / +{room_pos:.1f}°")
 
-        print("\n  Teleop rotation remaining (your controls):")
+        print("  Teleop rotation remaining (your controls):")
         for axis, joint_name in [("rz", "Joint_1"), ("ry", "Joint_2"), ("rx", "Joint_3")]:
             v = self.current_joints.get(joint_name, 0.0)
             lo, hi = JOINT_LIMITS[joint_name]
             print(f"    {axis}: {joint_name} -> -{math.degrees(v-lo):.1f}° / +{math.degrees(hi-v):.1f}°")
 
         # Sample random configurations
-        print(f"\n  Sampling {n_samples} random joint configurations...")
+        if not minimal:
+            print(f"\n  Sampling {n_samples} random joint configurations...")
         np.random.seed(42)
         configs = []
         current_cfg = [self.current_joints.get(jn, 0.0) for jn in JOINT_NAMES]
         configs.append(current_cfg)
         if lock:
-            print("  Orientation lock enabled: Joint_4 and Joint_5 fixed to current values.")
+            if not minimal:
+                print("  Orientation lock enabled: Joint_4 and Joint_5 fixed to current values.")
             j4_val = self.current_joints.get("Joint_4", 0.0)
             j5_val = self.current_joints.get("Joint_5", 0.0)
             for _ in range(max(0, n_samples - 1)):
@@ -184,7 +297,8 @@ class WorkspaceChecker(Node):
                 ]
                 configs.append(cfg)
 
-        print(f"  Running FK for {len(configs)} configurations...")
+        if not minimal:
+            print(f"  Running FK for {len(configs)} configurations...")
 
         # Compute FK
         positions = self.compute_fk_batch(configs)
@@ -197,7 +311,8 @@ class WorkspaceChecker(Node):
         ys = [p[1] for p in positions]
         zs = [p[2] for p in positions]
 
-        print(f"\n  Successfully computed {len(positions)} FK samples")
+        if not minimal:
+            print(f"\n  Successfully computed {len(positions)} FK samples")
 
         # Overall workspace bounds (reference)
         if not minimal:
@@ -222,14 +337,32 @@ class WorkspaceChecker(Node):
             dxs = [x - cx for x, y, z in positions]
             dys = [y - cy for x, y, z in positions]
             dzs = [z - cz for x, y, z in positions]
-            print(f"    +X (forward): up to {max(dxs)*100:.1f} cm")
-            print(f"    -X (back):    up to {-min(dxs)*100:.1f} cm")
-            print(f"    +Y (left):    up to {max(dys)*100:.1f} cm")
-            print(f"    -Y (right):   up to {-min(dys)*100:.1f} cm")
-            print(f"    +Z (up):      up to {max(dzs)*100:.1f} cm")
-            print(f"    -Z (down):    up to {-min(dzs)*100:.1f} cm")
+            caps = {
+                "+X": max(0.0, max(dxs)),
+                "-X": max(0.0, -min(dxs)),
+                "+Y": max(0.0, max(dys)),
+                "-Y": max(0.0, -min(dys)),
+                "+Z": max(0.0, max(dzs)),
+                "-Z": max(0.0, -min(dzs)),
+            }
 
-        print("═"*60 + "\n")
+            print("  (planning-validated, plan-only checks)")
+            p_x = self._max_plan_valid_translation(cx, cy, cz, "x", +1.0, caps["+X"], lock)
+            n_x = self._max_plan_valid_translation(cx, cy, cz, "x", -1.0, caps["-X"], lock)
+            p_y = self._max_plan_valid_translation(cx, cy, cz, "y", +1.0, caps["+Y"], lock)
+            n_y = self._max_plan_valid_translation(cx, cy, cz, "y", -1.0, caps["-Y"], lock)
+            p_z = self._max_plan_valid_translation(cx, cy, cz, "z", +1.0, caps["+Z"], lock)
+            n_z = self._max_plan_valid_translation(cx, cy, cz, "z", -1.0, caps["-Z"], lock)
+
+            print(f"    +X (forward): up to {p_x*100:.1f} cm")
+            print(f"    -X (back):    up to {n_x*100:.1f} cm")
+            print(f"    +Y (left):    up to {p_y*100:.1f} cm")
+            print(f"    -Y (right):   up to {n_y*100:.1f} cm")
+            print(f"    +Z (up):      up to {p_z*100:.1f} cm")
+            print(f"    -Z (down):    up to {n_z*100:.1f} cm")
+
+        if not minimal:
+            print("═"*60 + "\n")
 
 
 def main():

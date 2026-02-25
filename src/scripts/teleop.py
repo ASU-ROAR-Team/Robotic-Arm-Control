@@ -18,6 +18,7 @@ ORIENTATION LOCK:
 COMMANDS:
   XYZ (cm):       w/s/a/d/q/e [cm]
   Rotation (deg): rz/rz-/ry/ry-/rx/rx- [deg]
+    Home:           h   go to saved HOME pose
   Lock:           c   lock current J4+J5
   Unlock:         u
   Info:           p   print joints + lock status
@@ -58,6 +59,15 @@ JOINT_LIMITS = {
     "Joint_5": (-1.5808,  1.5808),
 }
 
+# Rounded HOME pose from your captured status (degrees -> radians)
+HOME_JOINTS = {
+    "Joint_1": math.radians(30.0),
+    "Joint_2": math.radians(-40.0),
+    "Joint_3": math.radians(160.0),
+    "Joint_4": math.radians(70.0),
+    "Joint_5": math.radians(0.0),
+}
+
 DIRECTION_MAP = {
     "w": (+1,  0,  0), "s": (-1,  0,  0),
     "a": ( 0, +1,  0), "d": ( 0, -1,  0),
@@ -96,6 +106,9 @@ msg = f"""
 │  ORIENTATION LOCK (J4 pitch + J5 twist):               │
 │    c  → lock current orientation                       │
 │    u  → unlock                                         │
+│                                                        │
+│  HOME MACRO:                                            │
+│    h  → move to saved HOME joint pose                  │
 │                                                        │
 │    p  → print joints + lock status + EE position       │
 │    x  → quit                                           │
@@ -242,6 +255,21 @@ class Teleop(Node):
         c.joint_constraints.extend(self._lock_jc())
         self._send(c)
 
+    def go_home(self):
+        if not self.done.is_set():
+            self.get_logger().warn("Still executing.")
+            return
+        self.done.clear()
+
+        c = Constraints()
+        for jn in ["Joint_1", "Joint_2", "Joint_3", "Joint_4", "Joint_5"]:
+            c.joint_constraints.append(self._joint_constraint(jn, HOME_JOINTS[jn], tol=0.03))
+
+        self.get_logger().info(
+            "HOME -> J1=30°, J2=-40°, J3=160°, J4=70°, J5=0°"
+        )
+        self._send(c)
+
     # --- Rotation: joint-space control of joints 1-3 ---
     def rotate_joint_axis(self, axis: str, angle_rad: float):
         if not self.done.is_set():
@@ -304,6 +332,7 @@ def parse(line):
     cmd = parts[0]
     if cmd == "x": return ("quit",)
     if cmd == "p": return ("print",)
+    if cmd == "h": return ("home",)
     if cmd == "c": return ("lock",)
     if cmd == "u": return ("unlock",)
     if cmd in DIRECTION_MAP:
@@ -347,6 +376,7 @@ def run(node: Teleop):
             if r[0] == "quit":
                 print("Exiting..."); rclpy.shutdown(); break
             elif r[0] == "print":  node.print_status()
+            elif r[0] == "home":   node.go_home()
             elif r[0] == "lock":   node.lock()
             elif r[0] == "unlock": node.unlock()
             elif r[0] == "xyz":
@@ -364,7 +394,7 @@ def run(node: Teleop):
                 node.rotate_joint_axis(axis, angle)
             elif r[0] == "bad":
                 print(f"  Error: {r[1]}")
-                print("  Try: w 5 | q 10 | rz 30 | ry- 15 | c | u | p | x")
+                print("  Try: h | w 5 | q 10 | rz 30 | ry- 15 | c | u | p | x")
     except Exception as e:
         print(e)
     finally:

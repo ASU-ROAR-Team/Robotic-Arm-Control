@@ -49,7 +49,7 @@ def generate_launch_description():
         executable='create',
         arguments=['-name', 'New_ROAR_Arm',
                    '-file', tmp_urdf_path, # Load from file, not string!
-                   '-x', '0', '-y', '0', '-z', '0.1'],
+                   '-x', '0', '-y', '0', '-z', '0'],
         output='screen',
     )
 
