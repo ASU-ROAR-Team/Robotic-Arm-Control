@@ -1,0 +1,41 @@
+[0.072s] Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit -- -j20 -l20
+[0.095s] Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit' returned '0': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit -- -j20 -l20
+[0.096s] Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit
+[0.101s] -- Install configuration: ""
+[0.101s] -- Execute custom install script
+[0.101s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/ament_index/resource_index/package_run_dependencies/legacy_moveit
+[0.101s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/ament_index/resource_index/parent_prefix_path/legacy_moveit
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/environment/ament_prefix_path.sh
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/environment/ament_prefix_path.dsv
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/environment/path.sh
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/environment/path.dsv
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/local_setup.bash
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/local_setup.sh
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/local_setup.zsh
+[0.102s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/local_setup.dsv
+[0.102s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.dsv
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/ament_index/resource_index/packages/legacy_moveit
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/cmake/legacy_moveitConfig.cmake
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/cmake/legacy_moveitConfig-version.cmake
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.xml
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/complete.launch.py
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/demo.launch.py
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/move_group.launch.py
+[0.109s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/moveit_rviz.launch.py
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/rsp.launch.py
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/setup_assistant.launch.py
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/spawn_controllers.launch.py
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/static_virtual_joint_tfs.launch.py
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/launch/warehouse_db.launch.py
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/initial_positions.yaml
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/joint_limits.yaml
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/kinematics.yaml
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/legacy_pkg.ros2_control.xacro
+[0.110s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/legacy_pkg.srdf
+[0.111s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/legacy_pkg.urdf.xacro
+[0.111s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/moveit.rviz
+[0.111s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/moveit_controllers.yaml
+[0.111s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/pilz_cartesian_limits.yaml
+[0.111s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/config/ros2_controllers.yaml
+[0.111s] -- Up-to-date symlink: /home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/.setup_assistant
+[0.112s] Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit' returned '0': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit

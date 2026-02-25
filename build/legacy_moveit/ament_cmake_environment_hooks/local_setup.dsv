@@ -1,0 +1,2 @@
+source;share/legacy_moveit/environment/ament_prefix_path.sh
+source;share/legacy_moveit/environment/path.sh

@@ -1,0 +1,9 @@
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/uninstall.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/legacy_pkg_uninstall.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/test.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/edit_cache.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/rebuild_cache.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/list_install_components.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/install.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/install/local.dir
+/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg/CMakeFiles/install/strip.dir
