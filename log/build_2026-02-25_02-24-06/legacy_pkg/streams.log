@@ -1,0 +1,57 @@
+[0.007s] Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/roar/new_arm/old_ROAR_arm/src/legacy_pkg -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg
+[0.130s] -- The C compiler identification is GNU 11.4.0
+[0.786s] -- The CXX compiler identification is GNU 11.4.0
+[1.861s] -- Detecting C compiler ABI info
+[2.108s] -- Detecting C compiler ABI info - done
+[2.112s] -- Check for working C compiler: /usr/bin/cc - skipped
+[2.112s] -- Detecting C compile features
+[2.112s] -- Detecting C compile features - done
+[2.114s] -- Detecting CXX compiler ABI info
+[2.897s] -- Detecting CXX compiler ABI info - done
+[2.901s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[2.901s] -- Detecting CXX compile features
+[2.902s] -- Detecting CXX compile features - done
+[2.903s] -- Found ament_cmake: 1.3.13 (/opt/ros/humble/share/ament_cmake/cmake)
+[2.995s] -- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter 
+[3.035s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[3.050s] -- Found urdf: 2.6.1 (/opt/ros/humble/share/urdf/cmake)
+[4.883s] -- Configuring done
+[4.886s] -- Generating done
+[4.888s] -- Build files have been written to: /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg
+[4.893s] Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/roar/new_arm/old_ROAR_arm/src/legacy_pkg -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg
+[4.894s] Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg -- -j20 -l20
+[4.916s] Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg -- -j20 -l20
+[4.923s] Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg
+[4.928s] -- Install configuration: ""
+[4.928s] -- Execute custom install script
+[4.929s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/launch/display.launch.py
+[4.935s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/launch/gazebo.launch.py
+[4.940s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/urdf/legacy.csv
+[4.945s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/urdf/legacy.urdf
+[4.952s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Follower_Gear.STL
+[4.957s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Left_Gripper.STL
+[4.962s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Link_1.STL
+[4.967s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Link_2.STL
+[4.972s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Link_3.STL
+[4.978s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Link_4.STL
+[4.984s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Link_5.STL
+[4.990s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Right_Gripper.STL
+[4.995s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/Servo_Gear.STL
+[5.001s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/meshes/base_link.STL
+[5.006s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/config/joint_names_New_URDF.yaml
+[5.012s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/ament_index/resource_index/package_run_dependencies/legacy_pkg
+[5.017s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/ament_index/resource_index/parent_prefix_path/legacy_pkg
+[5.023s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/environment/ament_prefix_path.sh
+[5.029s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/environment/ament_prefix_path.dsv
+[5.036s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/environment/path.sh
+[5.041s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/environment/path.dsv
+[5.046s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/local_setup.bash
+[5.052s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/local_setup.sh
+[5.057s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/local_setup.zsh
+[5.062s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/local_setup.dsv
+[5.067s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.dsv
+[5.073s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/ament_index/resource_index/packages/legacy_pkg
+[5.080s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/cmake/legacy_pkgConfig.cmake
+[5.085s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/cmake/legacy_pkgConfig-version.cmake
+[5.091s] -- Symlinking: /home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.xml
+[5.098s] Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg

@@ -1,0 +1,217 @@
+[0.141s] DEBUG:colcon:Command line arguments: ['/usr/bin/colcon', 'build', '--symlink-install']
+[0.141s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=True, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=20, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=None, packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, verb_parser=<colcon_defaults.argument_parser.defaults.DefaultArgumentsDecorator object at 0x70ff40f2ba90>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0x70ff41070f40>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0x70ff41070f40>>)
+[0.237s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) check parameters
+[0.237s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[0.237s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) check parameters
+[0.237s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[0.237s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) discover
+[0.237s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[0.237s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/home/roar/new_arm/old_ROAR_arm'
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore'
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore_ament_install'
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_pkg']
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_pkg'
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_meta']
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_meta'
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ros']
+[0.237s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ros'
+[0.244s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['cmake', 'python']
+[0.244s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'cmake'
+[0.244s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python'
+[0.244s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['python_setup_py']
+[0.244s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python_setup_py'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extensions ['ignore', 'ignore_ament_install']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extension 'ignore'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(build) ignored
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extensions ['ignore', 'ignore_ament_install']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extension 'ignore'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(install) ignored
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extensions ['ignore', 'ignore_ament_install']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extension 'ignore'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(log) ignored
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['ignore', 'ignore_ament_install']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'ignore'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'ignore_ament_install'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['colcon_pkg']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'colcon_pkg'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['colcon_meta']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'colcon_meta'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['ros']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'ros'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['cmake', 'python']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'cmake'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'python'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['python_setup_py']
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'python_setup_py'
+[0.245s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extensions ['ignore', 'ignore_ament_install']
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extension 'ignore'
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extension 'ignore_ament_install'
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extensions ['colcon_pkg']
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extension 'colcon_pkg'
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extensions ['colcon_meta']
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extension 'colcon_meta'
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extensions ['ros']
+[0.246s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_moveit) by extension 'ros'
+[0.247s] DEBUG:colcon.colcon_core.package_identification:Package 'src/legacy_moveit' with type 'ros.ament_cmake' and name 'legacy_moveit'
+[0.247s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extensions ['ignore', 'ignore_ament_install']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extension 'ignore'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extension 'ignore_ament_install'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extensions ['colcon_pkg']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extension 'colcon_pkg'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extensions ['colcon_meta']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extension 'colcon_meta'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extensions ['ros']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/legacy_pkg) by extension 'ros'
+[0.248s] DEBUG:colcon.colcon_core.package_identification:Package 'src/legacy_pkg' with type 'ros.ament_cmake' and name 'legacy_pkg'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extensions ['ignore', 'ignore_ament_install']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'ignore'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'ignore_ament_install'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extensions ['colcon_pkg']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'colcon_pkg'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extensions ['colcon_meta']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'colcon_meta'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extensions ['ros']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'ros'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extensions ['cmake', 'python']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'cmake'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'python'
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extensions ['python_setup_py']
+[0.248s] Level 1:colcon.colcon_core.package_identification:_identify(src/scripts) by extension 'python_setup_py'
+[0.248s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults
+[0.249s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) discover
+[0.249s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) using defaults
+[0.249s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) discover
+[0.249s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) using defaults
+[0.262s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) check parameters
+[0.262s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) discover
+[0.263s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 2 installed packages in /home/roar/new_arm/old_ROAR_arm/install
+[0.264s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 380 installed packages in /opt/ros/humble
+[0.272s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) using defaults
+[0.300s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'cmake_args' from command line to 'None'
+[0.300s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'cmake_target' from command line to 'None'
+[0.300s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.300s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'cmake_clean_cache' from command line to 'False'
+[0.300s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'cmake_clean_first' from command line to 'False'
+[0.300s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'cmake_force_configure' from command line to 'False'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'ament_cmake_args' from command line to 'None'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'catkin_cmake_args' from command line to 'None'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_pkg' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.301s] DEBUG:colcon.colcon_core.verb:Building package 'legacy_pkg' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg', 'merge_install': False, 'path': '/home/roar/new_arm/old_ROAR_arm/src/legacy_pkg', 'symlink_install': True, 'test_result_base': None}
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'cmake_args' from command line to 'None'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'cmake_target' from command line to 'None'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'cmake_clean_cache' from command line to 'False'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'cmake_clean_first' from command line to 'False'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'cmake_force_configure' from command line to 'False'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'ament_cmake_args' from command line to 'None'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'catkin_cmake_args' from command line to 'None'
+[0.301s] Level 5:colcon.colcon_core.verb:set package 'legacy_moveit' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.301s] DEBUG:colcon.colcon_core.verb:Building package 'legacy_moveit' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit', 'merge_install': False, 'path': '/home/roar/new_arm/old_ROAR_arm/src/legacy_moveit', 'symlink_install': True, 'test_result_base': None}
+[0.301s] INFO:colcon.colcon_core.executor:Executing jobs using 'parallel' executor
+[0.302s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete
+[0.302s] INFO:colcon.colcon_ros.task.ament_cmake.build:Building ROS package in '/home/roar/new_arm/old_ROAR_arm/src/legacy_pkg' with build type 'ament_cmake'
+[0.302s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/home/roar/new_arm/old_ROAR_arm/src/legacy_pkg'
+[0.304s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[0.304s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.304s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.311s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg -- -j20 -l20
+[0.337s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg -- -j20 -l20
+[0.344s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg
+[0.358s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(legacy_pkg)
+[0.358s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_pkg' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_pkg
+[0.360s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg' for CMake module files
+[0.360s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg' for CMake config files
+[0.360s] Level 1:colcon.colcon_core.shell:create_environment_hook('legacy_pkg', 'cmake_prefix_path')
+[0.360s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/hook/cmake_prefix_path.ps1'
+[0.361s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/hook/cmake_prefix_path.dsv'
+[0.361s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/hook/cmake_prefix_path.sh'
+[0.362s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/bin'
+[0.362s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/lib/pkgconfig/legacy_pkg.pc'
+[0.362s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/lib/python3.10/site-packages'
+[0.362s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/bin'
+[0.362s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.ps1'
+[0.363s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.dsv'
+[0.363s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.sh'
+[0.364s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.bash'
+[0.364s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.zsh'
+[0.365s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/colcon-core/packages/legacy_pkg)
+[0.365s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(legacy_pkg)
+[0.365s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg' for CMake module files
+[0.365s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg' for CMake config files
+[0.365s] Level 1:colcon.colcon_core.shell:create_environment_hook('legacy_pkg', 'cmake_prefix_path')
+[0.366s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/hook/cmake_prefix_path.ps1'
+[0.366s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/hook/cmake_prefix_path.dsv'
+[0.366s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/hook/cmake_prefix_path.sh'
+[0.366s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/bin'
+[0.366s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/lib/pkgconfig/legacy_pkg.pc'
+[0.367s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/lib/python3.10/site-packages'
+[0.367s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/bin'
+[0.367s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.ps1'
+[0.367s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.dsv'
+[0.368s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.sh'
+[0.368s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.bash'
+[0.368s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/legacy_pkg/package.zsh'
+[0.368s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg/share/colcon-core/packages/legacy_pkg)
+[0.369s] INFO:colcon.colcon_ros.task.ament_cmake.build:Building ROS package in '/home/roar/new_arm/old_ROAR_arm/src/legacy_moveit' with build type 'ament_cmake'
+[0.369s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/home/roar/new_arm/old_ROAR_arm/src/legacy_moveit'
+[0.369s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.369s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.445s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit -- -j20 -l20
+[0.467s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit' returned '0': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --build /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit -- -j20 -l20
+[0.468s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit
+[0.483s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(legacy_moveit)
+[0.483s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit' for CMake module files
+[0.483s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit' returned '0': CMAKE_PREFIX_PATH=/home/roar/new_arm/old_ROAR_arm/install/legacy_pkg:/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit:/opt/ros/humble /usr/bin/cmake --install /home/roar/new_arm/old_ROAR_arm/build/legacy_moveit
+[0.484s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit' for CMake config files
+[0.484s] Level 1:colcon.colcon_core.shell:create_environment_hook('legacy_moveit', 'cmake_prefix_path')
+[0.484s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/hook/cmake_prefix_path.ps1'
+[0.484s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/hook/cmake_prefix_path.dsv'
+[0.485s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/hook/cmake_prefix_path.sh'
+[0.485s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/bin'
+[0.485s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/lib/pkgconfig/legacy_moveit.pc'
+[0.485s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/lib/python3.10/site-packages'
+[0.486s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/bin'
+[0.486s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.ps1'
+[0.486s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.dsv'
+[0.486s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.sh'
+[0.487s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.bash'
+[0.487s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.zsh'
+[0.487s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/colcon-core/packages/legacy_moveit)
+[0.488s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(legacy_moveit)
+[0.488s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit' for CMake module files
+[0.488s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit' for CMake config files
+[0.488s] Level 1:colcon.colcon_core.shell:create_environment_hook('legacy_moveit', 'cmake_prefix_path')
+[0.488s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/hook/cmake_prefix_path.ps1'
+[0.488s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/hook/cmake_prefix_path.dsv'
+[0.489s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/hook/cmake_prefix_path.sh'
+[0.489s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/bin'
+[0.489s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/lib/pkgconfig/legacy_moveit.pc'
+[0.489s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/lib/python3.10/site-packages'
+[0.490s] Level 1:colcon.colcon_core.environment:checking '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/bin'
+[0.490s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.ps1'
+[0.490s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.dsv'
+[0.491s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.sh'
+[0.491s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.bash'
+[0.491s] INFO:colcon.colcon_core.shell:Creating package script '/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/legacy_moveit/package.zsh'
+[0.492s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/roar/new_arm/old_ROAR_arm/install/legacy_moveit/share/colcon-core/packages/legacy_moveit)
+[0.492s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:closing loop
+[0.492s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:loop closed
+[0.492s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete finished with '0'
+[0.493s] DEBUG:colcon.colcon_core.event_reactor:joining thread
+[0.541s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.notify_send': Could not find 'notify-send'
+[0.541s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.terminal_notifier': Not used on non-Darwin systems
+[0.541s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.win32': Not used on non-Windows systems
+[0.541s] INFO:colcon.colcon_notification.desktop_notification:Sending desktop notification using 'notify2'
+[0.542s] DEBUG:colcon.colcon_notification.desktop_notification.notify2:Failed to initialize notify2: org.freedesktop.DBus.Error.FileNotFound: Failed to connect to socket /run/user/1000/bus: No such file or directory
+[0.542s] DEBUG:colcon.colcon_core.event_reactor:joined thread
+[0.542s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/roar/new_arm/old_ROAR_arm/install/local_setup.ps1'
+[0.543s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/roar/new_arm/old_ROAR_arm/install/_local_setup_util_ps1.py'
+[0.544s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/roar/new_arm/old_ROAR_arm/install/setup.ps1'
+[0.544s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/roar/new_arm/old_ROAR_arm/install/local_setup.sh'
+[0.545s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/roar/new_arm/old_ROAR_arm/install/_local_setup_util_sh.py'
+[0.545s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/roar/new_arm/old_ROAR_arm/install/setup.sh'
+[0.546s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/roar/new_arm/old_ROAR_arm/install/local_setup.bash'
+[0.546s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/roar/new_arm/old_ROAR_arm/install/setup.bash'
+[0.547s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/roar/new_arm/old_ROAR_arm/install/local_setup.zsh'
+[0.547s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/roar/new_arm/old_ROAR_arm/install/setup.zsh'
