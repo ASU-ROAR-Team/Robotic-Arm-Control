@@ -1,1 +1,0 @@
-/home/roar/new_arm/old_ROAR_arm/build/legacy_moveit/ament_cmake_core/legacy_moveitConfig.cmake
