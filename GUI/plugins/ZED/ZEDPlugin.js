@@ -1,464 +1,279 @@
-const ZED_CAMERA_KEY = 'zed-camera';
+// plugins/zed-camera/ZEDPlugin.js
+(function () {
+    'use strict';
 
-// Define the plugin factory function
-window.ZEDPlugin = function ZEDPlugin() {
-    return function install(openmct) {
-        // --- Define the new object type ---
-        openmct.types.addType(ZED_CAMERA_KEY, {
-            name: 'ZED Camera',
-            description: 'Displays a video feed from a ZED 2 camera ROS topic via rosbridge_server and roslibjs.',
-            creatable: true,
-            cssClass: 'icon-camera',
-            initialize(domainObject) {
-                domainObject.rosbridgeUrl = 'ws://localhost:9090';
-                domainObject.rosImageTopic = '/zed2i/zed_node/depth/depth_registered/color_mapped_image/compressed_for_web';
-                domainObject.throttleRate = 200; // Increased to 200ms (5fps) - less aggressive
-            },
-            form: [
-                {
-                    key: 'rosbridgeUrl',
-                    name: 'ROSBridge WebSocket URL',
-                    control: 'textfield',
-                    required: true,
-                    cssClass: 'l-input',
+    const ZED_CAMERA_KEY = 'zed-camera';
+
+    window.ZEDPlugin = function ZEDPlugin() {
+        return function install(openmct) {
+
+            openmct.types.addType(ZED_CAMERA_KEY, {
+                name: 'ZED Camera',
+                description: 'Displays the ZED 2i depth feed via the ROS2 WS bridge.',
+                creatable: true,
+                cssClass: 'icon-camera',
+                initialize(domainObject) {
+                    domainObject.throttleRate = 200; // ms — controls client-side frame drop
                 },
-                {
-                    key: 'rosImageTopic',
-                    name: 'ROS Image Topic Name',
-                    control: 'textfield',
-                    required: true,
-                    cssClass: 'l-input',
-                },
-                {
-                    key: 'throttleRate',
-                    name: 'Throttle Rate (ms)',
-                    control: 'numberfield',
-                    required: false,
-                    cssClass: 'l-input',
-                }
-            ]
-        });
-
-        // --- Define the view provider ---
-        openmct.objectViews.addProvider({
-            key: 'zed-camera-view',
-            name: 'ZED Camera View',
-            canView: (domainObject) => {
-                return domainObject.type === ZED_CAMERA_KEY;
-            },
-            view: (domainObject) => {
-                let imgElement = null;
-                let ros = null;
-                let imageTopicSubscriber = null;
-                let errorMessageElement = null;
-                let viewContainerElement = null;
-                let snapshotButton = null;
-                let innerCircle = null;
-
-                // Performance optimization flags
-                let isProcessingFrame = false;
-                let lastFrameTime = 0;
-                let frameCount = 0;
-                let startTime = Date.now();
-
-                const displayMessage = (message, type = 'info') => {
-                    // Clear previous messages
-                    if (errorMessageElement && errorMessageElement.parentElement) {
-                        errorMessageElement.parentElement.removeChild(errorMessageElement);
-                        errorMessageElement = null;
+                form: [
+                    {
+                        key: 'throttleRate',
+                        name: 'Min ms between frames (throttle)',
+                        control: 'numberfield',
+                        required: false,
+                        cssClass: 'l-input'
                     }
+                ]
+            });
 
-                    // Hide image if message is an error/warning
-                    if (imgElement) {
-                        imgElement.style.display = (type === 'error' || type === 'warning') ? 'none' : 'block';
-                    }
+            openmct.objectViews.addProvider({
+                key: 'zed-camera-view',
+                name: 'ZED Camera View',
+                canView: (domainObject) => domainObject.type === ZED_CAMERA_KEY,
 
-                    errorMessageElement = document.createElement('div');
-                    errorMessageElement.style.textAlign = 'center';
-                    errorMessageElement.style.marginTop = '20px';
-                    errorMessageElement.style.padding = '10px';
-                    errorMessageElement.style.borderRadius = '5px';
+                view: (domainObject) => {
+                    let imgElement          = null;
+                    let errorMsgElement     = null;
+                    let viewContainer       = null;
+                    let snapshotButton      = null;
+                    let innerCircle         = null;
 
-                    if (type === 'error') {
-                        errorMessageElement.style.color = 'white';
-                        errorMessageElement.style.backgroundColor = '#d9534f';
-                    } else if (type === 'warning') {
-                        errorMessageElement.style.color = 'black';
-                        errorMessageElement.style.backgroundColor = '#f0ad4e';
-                    } else {
-                        errorMessageElement.style.color = 'black';
-                        errorMessageElement.style.backgroundColor = '#d9edf7';
-                    }
-                    errorMessageElement.textContent = message;
+                    // WebSocket
+                    let ws               = null;
+                    let reconnectTimer   = null;
+                    let wsConnected      = false;
 
-                    if (viewContainerElement) {
-                        viewContainerElement.appendChild(errorMessageElement);
-                    } else {
-                        console.error('ZED Plugin: Cannot find view container element');
-                        document.body.appendChild(errorMessageElement);
-                    }
-                };
+                    // Frame-drop state
+                    let isProcessingFrame = false;
+                    let lastFrameTime     = 0;
+                    const getThrottle     = () => Number(domainObject.throttleRate) || 200;
 
-                const logTiming = (label) => {
-                    const now = Date.now();
-                    console.log(`ZED Plugin Timing - ${label}: ${now}ms (since start: ${now - startTime}ms)`);
-                    return now;
-                };
+                    // ── helpers ──────────────────────────────────────────────
 
-                const connectAndSubscribe = (rosbridgeUrl, rosImageTopic, throttleRate) => {
-                    // Clean up existing connections
-                    if (imageTopicSubscriber) {
-                        imageTopicSubscriber.unsubscribe();
-                        imageTopicSubscriber = null;
-                    }
-                    if (ros) {
-                        ros.close();
-                        ros = null;
-                    }
-                    if (imgElement) {
-                        imgElement.src = ''; // Clear current image
-                        imgElement.style.display = 'none';
-                    }
-
-                    // Reset performance counters
-                    isProcessingFrame = false;
-                    lastFrameTime = 0;
-                    frameCount = 0;
-                    startTime = Date.now();
-                    
-                    if (snapshotButton) {
-                        snapshotButton.style.display = 'none';
-                    }
-
-
-                    if (!rosbridgeUrl || !rosImageTopic) {
-                        displayMessage('ZED Camera: ROSBridge URL or Image Topic not configured.', 'warning');
-                        return;
-                    }
-
-                    console.log(`ZED Plugin: Connecting to ROSBridge at: ${rosbridgeUrl}`);
-                    console.log(`ZED Plugin: Subscribing to topic: ${rosImageTopic} with throttle: ${throttleRate}ms`);
-
-                    ros = new ROSLIB.Ros({
-                        url: rosbridgeUrl
-                    });
-
-                    ros.on('connection', () => {
-                        console.log('ZED Plugin: Connected to ROSBridge.');
-                        logTiming('ROS Connection Established');
-                        displayMessage('Connected to ZED Camera. Waiting for image stream...', 'info');
-
-                        imageTopicSubscriber = new ROSLIB.Topic({
-                            ros: ros,
-                            name: rosImageTopic,
-                            messageType: 'sensor_msgs/CompressedImage',
-                            throttle_rate: throttleRate
-                        });
-
-                        imageTopicSubscriber.subscribe((message) => {
-                            const frameStartTime = logTiming('Frame Received');
-
-                            // Frame dropping - skip if we're still processing the last frame
-                            if (isProcessingFrame) {
-                                console.log('ZED Plugin: Dropping frame - still processing previous frame');
-                                return;
-                            }
-
-                            // Additional frame rate limiting - ensure minimum time between frames
-                            const timeSinceLastFrame = frameStartTime - lastFrameTime;
-                            if (timeSinceLastFrame < throttleRate * 0.8) { // 80% of throttle rate as buffer
-                                console.log(`ZED Plugin: Dropping frame - too soon (${timeSinceLastFrame}ms < ${throttleRate * 0.8}ms)`);
-                                return;
-                            }
-
-                            isProcessingFrame = true;
-                            frameCount++;
-                            lastFrameTime = frameStartTime;
-
-                            // Log frame rate every 10 frames
-                            if (frameCount % 10 === 0) {
-                                const avgFps = (frameCount * 1000) / (frameStartTime - startTime);
-                                console.log(`ZED Plugin: Processed ${frameCount} frames, avg fps: ${avgFps.toFixed(2)}`);
-                            }
-
-                            try {
-                                let imageData = message.data;
-
-                                if (typeof imageData === 'string') {
-                                    logTiming('String Processing Start');
-
-                                    const dataUrl = `data:image/jpeg;base64,${imageData}`;
-
-                                    logTiming('Data URL Created');
-
-                                    if (imgElement) {
-                                        imgElement.src = dataUrl;
-                                        imgElement.style.display = 'block';
-                                        if (snapshotButton) {
-                                            snapshotButton.style.display = 'block';
-                                        }
-                                    }
-
-                                    logTiming('Image Element Updated');
-
-                                    if (errorMessageElement && errorMessageElement.parentElement) {
-                                        errorMessageElement.parentElement.removeChild(errorMessageElement);
-                                        errorMessageElement = null;
-                                    }
-
-                                } else if (imageData instanceof ArrayBuffer || imageData instanceof Uint8Array) {
-                                    logTiming('Binary Processing Start');
-
-                                    const bytes = new Uint8Array(imageData);
-                                    let binaryString = '';
-                                    const chunkSize = 1024;
-
-                                    for (let i = 0; i < bytes.length; i += chunkSize) {
-                                        const chunk = bytes.slice(i, i + chunkSize);
-                                        binaryString += String.fromCharCode.apply(null, chunk);
-                                    }
-
-                                    const base64 = btoa(binaryString);
-                                    const dataUrl = `data:image/jpeg;base64,${base64}`;
-
-                                    logTiming('Binary to Base64 Conversion Complete');
-
-                                    if (imgElement) {
-                                        imgElement.src = dataUrl;
-                                        imgElement.style.display = 'block';
-                                        if (snapshotButton) {
-                                            snapshotButton.style.display = 'block';
-                                        }
-                                    }
-
-                                    logTiming('Binary Image Element Updated');
-
-                                    if (errorMessageElement && errorMessageElement.parentElement) {
-                                        errorMessageElement.parentElement.removeChild(errorMessageElement);
-                                        errorMessageElement = null;
-                                    }
-
-                                } else {
-                                    console.error('ZED Plugin: Unexpected image data format:', typeof imageData);
-                                    displayMessage('ZED Camera: Unexpected image data format from ROSBridge.', 'error');
-                                }
-
-                            } catch (error) {
-                                console.error('ZED Plugin: Error processing frame:', error);
-                                displayMessage('ZED Camera: Error processing image frame.', 'error');
-                            } finally {
-                                isProcessingFrame = false;
-                                logTiming('Frame Processing Complete');
-                            }
-                        });
-                    });
-
-                    ros.on('error', (error) => {
-                        console.error('ZED Plugin: ROSBridge error:', error);
-                        displayMessage('ZED Camera: ROSBridge connection error. Check URL and server.', 'error');
-                        isProcessingFrame = false;
-                        if (imageTopicSubscriber) {
-                            imageTopicSubscriber.unsubscribe();
-                            imageTopicSubscriber = null;
-                        }
-                    });
-
-                    ros.on('close', (event) => {
-                        console.log('ZED Plugin: ROSBridge closed:', event.code, event.reason);
-                        isProcessingFrame = false;
-
-                        if (!event.wasClean) {
-                            displayMessage('ZED Camera: ROSBridge disconnected unexpectedly. Attempting to reconnect...', 'error');
-                            setTimeout(() => {
-                                connectAndSubscribe(domainObject.rosbridgeUrl, domainObject.rosImageTopic, domainObject.throttleRate);
-                            }, 5000);
-                        } else {
-                            displayMessage('ZED Camera: Disconnected.', 'info');
-                        }
-
-                        if (imageTopicSubscriber) {
-                            imageTopicSubscriber.unsubscribe();
-                            imageTopicSubscriber = null;
+                    const displayMessage = (message, type = 'info') => {
+                        if (errorMsgElement?.parentElement) {
+                            errorMsgElement.parentElement.removeChild(errorMsgElement);
+                            errorMsgElement = null;
                         }
                         if (imgElement) {
-                            imgElement.src = '';
-                            imgElement.style.display = 'none';
+                            imgElement.style.display = (type === 'error' || type === 'warning') ? 'none' : 'block';
                         }
-                        if (snapshotButton) {
-                             snapshotButton.style.display = 'none';
-                        }
-                    });
-                };
 
-                const takeSnapshot = () => {
-                    if (imgElement && imgElement.src) {
+                        errorMsgElement = document.createElement('div');
+                        Object.assign(errorMsgElement.style, {
+                            textAlign: 'center', marginTop: '20px',
+                            padding: '10px', borderRadius: '5px'
+                        });
+
+                        if (type === 'error') {
+                            errorMsgElement.style.backgroundColor = '#d9534f';
+                            errorMsgElement.style.color           = 'white';
+                        } else if (type === 'warning') {
+                            errorMsgElement.style.backgroundColor = '#f0ad4e';
+                            errorMsgElement.style.color           = 'black';
+                        } else {
+                            errorMsgElement.style.backgroundColor = '#d9edf7';
+                            errorMsgElement.style.color           = 'black';
+                        }
+
+                        errorMsgElement.textContent = message;
+                        (viewContainer || document.body).appendChild(errorMsgElement);
+                    };
+
+                    const clearMessage = () => {
+                        if (errorMsgElement?.parentElement) {
+                            errorMsgElement.parentElement.removeChild(errorMsgElement);
+                            errorMsgElement = null;
+                        }
+                    };
+
+                    // ── WebSocket ─────────────────────────────────────────────
+
+                    const initWS = () => {
+                        if (ws && ws.readyState !== WebSocket.CLOSED) return;
+
+                        ws = new WebSocket('ws://localhost:8080');
+
+                        ws.onopen = () => {
+                            console.log('[ZEDPlugin] Connected to WS bridge');
+                            wsConnected = true;
+                            if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+                            displayMessage('Connected. Waiting for ZED image stream...', 'info');
+                        };
+
+                        ws.onmessage = (event) => {
+                            try {
+                                const msg = JSON.parse(event.data);
+                                if (msg.type !== 'zed_frame') return;
+
+                                const now = Date.now();
+
+                                // Client-side frame dropping
+                                if (isProcessingFrame) return;
+                                if ((now - lastFrameTime) < getThrottle() * 0.8) return;
+
+                                isProcessingFrame = true;
+                                lastFrameTime     = now;
+
+                                try {
+                                    const data = typeof msg.data === 'string'
+                                        ? JSON.parse(msg.data) : msg.data;
+
+                                    if (data?.data && imgElement) {
+                                        imgElement.src          = `data:image/jpeg;base64,${data.data}`;
+                                        imgElement.style.display = 'block';
+                                        if (snapshotButton) snapshotButton.style.display = 'block';
+                                        clearMessage();
+                                    }
+                                } finally {
+                                    isProcessingFrame = false;
+                                }
+
+                            } catch (e) {
+                                console.error('[ZEDPlugin] Frame parse error:', e);
+                                isProcessingFrame = false;
+                            }
+                        };
+
+                        ws.onclose = () => {
+                            console.warn('[ZEDPlugin] Disconnected. Reconnecting in 3s...');
+                            wsConnected = false;
+                            isProcessingFrame = false;
+                            if (imgElement)     imgElement.style.display     = 'none';
+                            if (snapshotButton) snapshotButton.style.display = 'none';
+                            displayMessage('ZED Camera: Disconnected. Reconnecting...', 'error');
+                            scheduleReconnect();
+                        };
+
+                        ws.onerror = (err) => {
+                            console.error('[ZEDPlugin] WS error', err);
+                            ws.close();
+                        };
+                    };
+
+                    const scheduleReconnect = () => {
+                        if (reconnectTimer) return;
+                        reconnectTimer = setInterval(() => {
+                            console.log('[ZEDPlugin] Attempting reconnect...');
+                            initWS();
+                        }, 3000);
+                    };
+
+                    const stopWS = () => {
+                        if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+                        if (ws) { ws.close(); ws = null; }
+                        wsConnected = false;
+                    };
+
+                    // ── Snapshot ──────────────────────────────────────────────
+
+                    const takeSnapshot = () => {
+                        if (!imgElement?.src) {
+                            openmct.notifications.error('Snapshot failed: No image available.');
+                            return;
+                        }
                         try {
-                            // Create a temporary link element to trigger the download
-                            const link = document.createElement('a');
-                            link.href = imgElement.src;
-                            
-                            // Generate a filename
-                            const now = new Date();
-                            const timestamp = now.toISOString().replace(/[:.]/g, '-');
-                            const filename = `zed-camera-snapshot-${timestamp}.jpeg`;
-                            
-                            link.download = filename;
+                            const link      = document.createElement('a');
+                            link.href       = imgElement.src;
+                            link.download   = `zed-snapshot-${Date.now()}.jpeg`;
                             document.body.appendChild(link);
                             link.click();
                             document.body.removeChild(link);
-                            
-                            console.log(`Screenshot saved: ${filename}`);
-                            openmct.notifications.info('Snapshot captured successfully!');
-                        } catch (error) {
-                            console.error('Error taking screenshot:', error);
-                            openmct.notifications.error('Snapshot failed: ' + error.message);
+                            openmct.notifications.info('Snapshot captured!');
+                        } catch (e) {
+                            openmct.notifications.error('Snapshot failed: ' + e.message);
                         }
-                    } else {
-                        console.warn('Cannot take screenshot: No image data available.');
-                        openmct.notifications.error('Snapshot failed: No image data available.');
-                    }
-                };
+                    };
 
-                return {
-                    show(element) {
-                        viewContainerElement = element;
-                        
-                        const container = document.createElement('div');
-                        container.style.width = '100%';
-                        container.style.height = '100%';
-                        container.style.position = 'relative';
+                    // ── View lifecycle ────────────────────────────────────────
 
-                        imgElement = document.createElement('img');
-                        imgElement.style.width = '100%';
-                        imgElement.style.height = '100%';
-                        imgElement.style.objectFit = 'contain';
-                        imgElement.style.display = 'none';
+                    return {
+                        show(element) {
+                            viewContainer = element;
 
-                        imgElement.loading = 'eager';
-                        imgElement.decoding = 'async';
-                        
-                        container.appendChild(imgElement);
+                            const container = document.createElement('div');
+                            Object.assign(container.style, {
+                                width: '100%', height: '100%', position: 'relative'
+                            });
 
-                        snapshotButton = document.createElement('button');
-                        snapshotButton.style.position = 'absolute';
-                        snapshotButton.style.bottom = '15px';
-                        snapshotButton.style.left = '50%';
-                        snapshotButton.style.transform = 'translateX(-50%)';
-                        snapshotButton.style.width = '60px';
-                        snapshotButton.style.height = '60px';
-                        snapshotButton.style.backgroundColor = 'transparent';
-                        snapshotButton.style.border = '2px solid white';
-                        snapshotButton.style.borderRadius = '50%';
-                        snapshotButton.style.cursor = 'pointer';
-                        snapshotButton.style.display = 'none';
-                        snapshotButton.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-                        snapshotButton.style.outline = 'none';
-                        
-                        snapshotButton.addEventListener('mousedown', () => {
-                            snapshotButton.style.transform = 'translateX(-50%) scale(0.95)';
-                            snapshotButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
-                        });
-                        snapshotButton.addEventListener('mouseup', () => {
-                            snapshotButton.style.transform = 'translateX(-50%) scale(1)';
-                            snapshotButton.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-                        });
-                        snapshotButton.addEventListener('mouseleave', () => {
-                            snapshotButton.style.transform = 'translateX(-50%) scale(1)';
-                            snapshotButton.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-                        });
+                            imgElement = document.createElement('img');
+                            Object.assign(imgElement.style, {
+                                width: '100%', height: '100%',
+                                objectFit: 'contain', display: 'none'
+                            });
+                            imgElement.loading  = 'eager';
+                            imgElement.decoding = 'async';
+                            container.appendChild(imgElement);
 
-                        snapshotButton.addEventListener('click', takeSnapshot);
-                        container.appendChild(snapshotButton);
+                            // Snapshot button (outer ring)
+                            snapshotButton = document.createElement('button');
+                            Object.assign(snapshotButton.style, {
+                                position: 'absolute', bottom: '15px',
+                                left: '50%', transform: 'translateX(-50%)',
+                                width: '60px', height: '60px',
+                                backgroundColor: 'transparent',
+                                border: '2px solid white', borderRadius: '50%',
+                                cursor: 'pointer', display: 'none',
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.3)', outline: 'none'
+                            });
 
-                        innerCircle = document.createElement('div');
-                        innerCircle.style.width = '45px';
-                        innerCircle.style.height = '45px';
-                        innerCircle.style.backgroundColor = 'white';
-                        innerCircle.style.border = 'none';
-                        innerCircle.style.borderRadius = '50%';
-                        innerCircle.style.position = 'absolute';
-                        innerCircle.style.top = '50%';
-                        innerCircle.style.left = '50%';
-                        innerCircle.style.transform = 'translate(-50%, -50%)';
-                        innerCircle.style.boxSizing = 'border-box';
-                        snapshotButton.appendChild(innerCircle);
-                        
-                        element.appendChild(container);
+                            snapshotButton.addEventListener('mousedown',  () => {
+                                snapshotButton.style.transform  = 'translateX(-50%) scale(0.95)';
+                                snapshotButton.style.boxShadow  = '0 2px 4px rgba(0,0,0,0.2)';
+                            });
+                            snapshotButton.addEventListener('mouseup',    () => {
+                                snapshotButton.style.transform  = 'translateX(-50%) scale(1)';
+                                snapshotButton.style.boxShadow  = '0 4px 8px rgba(0,0,0,0.3)';
+                            });
+                            snapshotButton.addEventListener('mouseleave', () => {
+                                snapshotButton.style.transform  = 'translateX(-50%) scale(1)';
+                                snapshotButton.style.boxShadow  = '0 4px 8px rgba(0,0,0,0.3)';
+                            });
+                            snapshotButton.addEventListener('click', takeSnapshot);
 
-                        logTiming('View Shown - Starting Connection');
-                        connectAndSubscribe(domainObject.rosbridgeUrl, domainObject.rosImageTopic, domainObject.throttleRate);
-                    },
+                            // Inner white circle
+                            innerCircle = document.createElement('div');
+                            Object.assign(innerCircle.style, {
+                                width: '45px', height: '45px',
+                                backgroundColor: 'white', borderRadius: '50%',
+                                position: 'absolute', top: '50%', left: '50%',
+                                transform: 'translate(-50%, -50%)', boxSizing: 'border-box'
+                            });
+                            snapshotButton.appendChild(innerCircle);
+                            container.appendChild(snapshotButton);
 
-                    onEditModeChange(editMode) {
-                        if (editMode) {
-                            if (imageTopicSubscriber) {
-                                imageTopicSubscriber.unsubscribe();
-                                imageTopicSubscriber = null;
+                            element.appendChild(container);
+                            initWS();
+                        },
+
+                        onEditModeChange(editMode) {
+                            if (editMode) {
+                                stopWS();
+                                if (imgElement)     imgElement.style.display     = 'none';
+                                if (snapshotButton) snapshotButton.style.display = 'none';
+                                displayMessage('ZED Camera: Edit mode — stream paused.', 'info');
+                            } else {
+                                initWS();
                             }
-                            if (ros) {
-                                ros.close();
-                                ros = null;
-                            }
-                            isProcessingFrame = false;
-                            if (imgElement) {
-                                imgElement.src = '';
-                                imgElement.style.display = 'none';
-                            }
-                            if (snapshotButton) {
-                                snapshotButton.style.display = 'none';
-                            }
-                            displayMessage('ZED Camera: In edit mode. Stream paused.', 'info');
-                        } else {
-                            logTiming('Edit Mode Ended - Reconnecting');
-                            connectAndSubscribe(domainObject.rosbridgeUrl, domainObject.rosImageTopic, domainObject.throttleRate);
-                        }
-                    },
+                        },
 
-                    destroy: function () {
-                        console.log('ZED Plugin: Destroying view...');
-                        
-                        if (snapshotButton) {
-                            snapshotButton.removeEventListener('click', takeSnapshot);
-                            snapshotButton.removeEventListener('mousedown', () => {});
-                            snapshotButton.removeEventListener('mouseup', () => {});
-                            snapshotButton.removeEventListener('mouseleave', () => {});
-                            if (snapshotButton.parentElement) {
-                                snapshotButton.parentElement.removeChild(snapshotButton);
-                            }
-                            snapshotButton = null;
-                        }
-                        if (innerCircle && innerCircle.parentElement) {
-                            innerCircle.parentElement.removeChild(innerCircle);
-                            innerCircle = null;
-                        }
+                        destroy() {
+                            stopWS();
+                            snapshotButton?.removeEventListener('click', takeSnapshot);
+                            if (snapshotButton?.parentElement) snapshotButton.parentElement.removeChild(snapshotButton);
+                            if (innerCircle?.parentElement)    innerCircle.parentElement.removeChild(innerCircle);
+                            if (imgElement?.parentElement)     imgElement.parentElement.removeChild(imgElement);
+                            if (errorMsgElement?.parentElement) errorMsgElement.parentElement.removeChild(errorMsgElement);
 
-                        if (imageTopicSubscriber) {
-                            imageTopicSubscriber.unsubscribe();
-                            imageTopicSubscriber = null;
+                            imgElement = snapshotButton = innerCircle = errorMsgElement = viewContainer = null;
+                            console.log('[ZEDPlugin] View destroyed.');
                         }
-                        if (ros) {
-                            ros.close();
-                            ros = null;
-                        }
-                        if (imgElement && imgElement.parentElement) {
-                            imgElement.parentElement.removeChild(imgElement);
-                        }
-                        imgElement = null;
-                        if (errorMessageElement && errorMessageElement.parentElement) {
-                            errorMessageElement.parentElement.removeChild(errorMessageElement);
-                        }
-                        errorMessageElement = null;
-                        viewContainerElement = null;
-                        isProcessingFrame = false;
+                    };
+                }
+            });
 
-                        console.log('ZED Camera View destroyed.');
-                    }
-                };
-            }
-        });
-
-        return {
-            destroy: () => {}
+            return { destroy: () => {} };
         };
     };
-};
+
+})();

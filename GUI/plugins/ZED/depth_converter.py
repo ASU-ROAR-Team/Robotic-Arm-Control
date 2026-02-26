@@ -1,95 +1,97 @@
 #!/usr/bin/env python3
+# depthconverter.py — ROS2 version
 
-import rospy
+import rclpy
+from rclpy.node import Node
 import cv2
 import numpy as np
-from sensor_msgs.msg import Image, CompressedImage # Import CompressedImage
+from sensor_msgs.msg import Image, CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
 
-# --- Define your fixed depth range here (in meters) ---
-# Adjust these values based on the typical depth range of your ZED camera and scene.
-DEPTH_MIN = 0.5  # Minimum depth to consider (e.5 meters)
-DEPTH_MAX = 10.0 # Maximum depth to consider (e.g., 10.0 meters)
-# -----------------------------------------------------------
+# --- Fixed depth range (metres) — adjust to suit your scene ---
+DEPTH_MIN = 0.5
+DEPTH_MAX = 10.0
+# --------------------------------------------------------------
 
-class DepthImageConverter:
+
+class DepthImageConverter(Node):
     def __init__(self):
-        rospy.init_node('depth_image_converter', anonymous=True)
+        super().__init__('depth_image_converter')
 
         self.bridge = CvBridge()
-        
-        # Subscribe to the raw 32FC1 depth image topic
-        self.image_sub = rospy.Subscriber(
-            "/zed2i/zed_node/depth/depth_registered",
+
+        self.image_sub = self.create_subscription(
             Image,
+            '/zed2i/zed_node/depth/depth_registered',
             self.callback,
-            queue_size=1
-        )
-        
-        # --- NEW: Publisher for the COMPRESSED color-mapped image ---
-        # We'll publish to a new topic name to clearly distinguish it
-        self.compressed_image_pub = rospy.Publisher(
-            "/zed2i/zed_node/depth/depth_registered/color_mapped_image/compressed_for_web",
-            CompressedImage, # Publish CompressedImage type
-            queue_size=1
+            1          # queue_size=1 — only keep latest frame
         )
 
-        rospy.loginfo("Depth Image Converter Node Started.")
-        rospy.loginfo(f"Subscribing to /zed2i/zed_node/depth/depth_registered (32FC1)")
-        rospy.loginfo(f"Publishing to /zed2i/zed_node/depth/depth_registered/color_mapped_image/compressed_for_web (JPEG)")
+        self.compressed_pub = self.create_publisher(
+            CompressedImage,
+            '/zed2i/zed_node/depth/depth_registered/color_mapped_image/compressed_for_web',
+            1
+        )
 
+        self.get_logger().info('Depth Image Converter Node started (ROS2).')
+        self.get_logger().info('Subscribing to /zed2i/zed_node/depth/depth_registered (32FC1)')
+        self.get_logger().info('Publishing  to /zed2i/.../compressed_for_web (JPEG)')
 
-    def callback(self, data):
+    def callback(self, data: Image):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(data, desired_encoding="32FC1")
+            cv_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='32FC1')
         except CvBridgeError as e:
-            rospy.logerr(f"CvBridge Error: {e}")
+            self.get_logger().error(f'CvBridge error: {e}')
             return
 
         if cv_image is None:
-            rospy.logwarn("Received empty or invalid image.")
+            self.get_logger().warn('Received empty image.')
             return
 
-        # Handle NaN/Inf values and clip to fixed depth range
-        processed_image = np.copy(cv_image)
-        processed_image[np.isnan(processed_image)] = 0.0
-        processed_image[np.isinf(processed_image)] = 0.0
-        processed_image = np.clip(processed_image, DEPTH_MIN, DEPTH_MAX)
+        # Replace NaN / Inf and clamp to fixed range
+        processed = np.copy(cv_image)
+        processed[np.isnan(processed)] = 0.0
+        processed[np.isinf(processed)] = 0.0
+        processed = np.clip(processed, DEPTH_MIN, DEPTH_MAX)
 
-        # Normalize to 0-255 using the FIXED global min/max
+        # Normalise to 0-255
         if DEPTH_MAX == DEPTH_MIN:
-            normalized_image = np.zeros_like(processed_image, dtype=np.uint8)
+            normalised = np.zeros_like(processed, dtype=np.uint8)
         else:
-            normalized_image = ((processed_image - DEPTH_MIN) / (DEPTH_MAX - DEPTH_MIN) * 255).astype(np.uint8)
-        
-        # Apply a colormap (e.g., COLORMAP_JET)
-        color_mapped_image = cv2.applyColorMap(normalized_image, cv2.COLORMAP_JET)
+            normalised = ((processed - DEPTH_MIN) / (DEPTH_MAX - DEPTH_MIN) * 255).astype(np.uint8)
 
-        # --- NEW: Compress the image to JPEG ---
-        # cv2.imencode returns (success, buffer)
-        # We want to encode it as JPEG, with a quality of 80 (0-100)
+        # Apply colour map
+        colour_mapped = cv2.applyColorMap(normalised, cv2.COLORMAP_JET)
+
+        # Compress to JPEG
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
         try:
-            result, encoded_image = cv2.imencode('.jpg', color_mapped_image, encode_param)
+            result, encoded = cv2.imencode('.jpg', colour_mapped, encode_param)
             if not result:
-                rospy.logerr("Failed to encode image to JPEG.")
+                self.get_logger().error('Failed to encode image to JPEG.')
                 return
-            
-            # Create a CompressedImage message
-            compressed_msg = CompressedImage()
-            compressed_msg.header = data.header # Use original header for timestamp/frame_id
-            compressed_msg.format = "jpeg" # Specify format
-            compressed_msg.data = np.array(encoded_image).tobytes() # Convert numpy array to bytes
 
-            # Publish the compressed image
-            self.compressed_image_pub.publish(compressed_msg)
+            msg          = CompressedImage()
+            msg.header   = data.header   # preserve original timestamp / frame_id
+            msg.format   = 'jpeg'
+            msg.data     = np.array(encoded).tobytes()
+            self.compressed_pub.publish(msg)
+
         except Exception as e:
-            rospy.logerr(f"Image compression/publishing Error: {e}")
+            self.get_logger().error(f'Compression / publish error: {e}')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = DepthImageConverter()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
-    try:
-        converter = DepthImageConverter()
-        rospy.spin()
-    except rospy.ROSInterruptException:
-        pass
+    main()

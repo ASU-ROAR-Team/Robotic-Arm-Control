@@ -1,277 +1,277 @@
-// src/plugins/Drilling-Control/DrillingControlView.js
-
+// plugins/Drilling-Control/DrillingControlView.js
 (function () {
     class DrillingControlView {
         constructor(element, openmct) {
-            this.element = element;
-            this.openmct = openmct;
-            console.log("DrillingControlView constructor: this.openmct is", this.openmct); 
+            this.element  = element;
+            this.openmct  = openmct;
 
-            this.ros = null;
-            this.rosConnected = false;
-            this.drillingCommandPublisher = null; 
-            this.drillingStatusSubscriber = null;
-            this.fsmStateSubscriber = null;
-            this.roverStatusSubscriber = null;
+            // WebSocket
+            this.ws               = null;
+            this.reconnectInterval = null;
+            this.wsConnected      = false;
+
+            // Rover / drilling state
             this.currentRoverState = { rover_state: 'IDLE', active_mission: '' };
-            this.webcamSubscriber = null;
-
-            this.rosStatusDot = null;
-            this.rosStatus = null;
-            this.fsmStateDisplay = null;
-            this.platformDepthDisplay = null;
-            this.sampleWeightDisplay = null;
-
-            this.platformUpButton = null;
-            this.platformDownButton = null;
-            this.augerToggleSwitch = null; 
-            this.gateToggleSwitch = null; 
-
             this.last_known_height = 0.0;
-            
+
             this.currentManualInputState = {
-                manual_up: false,
+                manual_up:   false,
                 manual_down: false,
-                auger_on: false,
-                gate_open: false
+                auger_on:    false,
+                gate_open:   false
             };
 
-            this.webcamImageElement = null; 
-            this.webcamStatusMessageElement = null;
-            this.webcamSnapshotButton = null;
-            this.webcamInnerSnapshotCircle = null;
+            // DOM refs — populated in initializeUI()
+            this.rosStatusDot            = null;
+            this.rosStatus               = null;
+            this.fsmStateDisplay         = null;
+            this.platformDepthDisplay    = null;
+            this.sampleWeightDisplay     = null;
+            this.platformUpButton        = null;
+            this.platformDownButton      = null;
+            this.augerToggleSwitch       = null;
+            this.gateToggleSwitch        = null;
+            this.webcamImageElement      = null;
+            this.webcamStatusMsgElement  = null;
+            this.webcamSnapshotButton    = null;
         }
 
-        handleRosConnection = () => {
-            console.log('Connected to ROS websocket server.');
-            this.rosConnected = true;
-            if (this.rosStatus) {
-                this.rosStatus.textContent = 'Connected to ROS';
-                this.rosStatus.classList.remove('error');
-                this.rosStatus.classList.add('connected');
-            }
-            if (this.rosStatusDot) {
-                this.rosStatusDot.classList.remove('error');
-                this.rosStatusDot.classList.add('connected');
-            }
-            this.startRosWebcam();
-        };
+        // ─── WebSocket ──────────────────────────────────────────────────────
 
-        handleRosError = (error) => {
-            console.error('ROS connection error:', error);
-            this.rosConnected = false;
-            if (this.rosStatus) {
-                this.rosStatus.textContent = 'ROS Connection Error!';
-                this.rosStatus.classList.remove('connected');
-                this.rosStatus.classList.add('error');
-            }
-            if (this.rosStatusDot) {
-                this.rosStatusDot.classList.remove('connected');
-                this.rosStatusDot.classList.add('error');
-            }
-            this.stopRosWebcam();
-        };
+        initWS() {
+            if (this.ws && this.ws.readyState !== WebSocket.CLOSED) return;
 
-        handleRosClose = () => {
-            console.warn('ROS connection closed. Attempting to reconnect...');
-            this.rosConnected = false;
-            if (this.rosStatus) {
-                this.rosStatus.textContent = 'Disconnected from ROS';
-                this.rosStatus.classList.remove('connected');
-                this.rosStatus.classList.add('error');
-            }
-            if (this.rosStatusDot) {
-                this.rosStatusDot.classList.remove('connected');
-                this.rosStatusDot.classList.add('error');
-            }
-            this.stopRosWebcam();
-            setTimeout(() => {
-                console.log('Attempting to reconnect to ROS...');
-                this.connectToROS();
+            this.ws = new WebSocket("ws://localhost:8080");
+
+            this.ws.onopen = () => {
+                console.log("[DrillingControlView] Connected to WS bridge");
+                this.wsConnected = true;
+                this.updateConnectionStatus(true);
+                if (this.reconnectInterval) {
+                    clearInterval(this.reconnectInterval);
+                    this.reconnectInterval = null;
+                }
+            };
+
+            this.ws.onmessage = (event) => {
+                try {
+                    const msg  = JSON.parse(event.data);
+                    const data = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+
+                    switch (msg.type) {
+                        case 'rover_status':
+                            this.handleRoverStatus(data);
+                            break;
+                        case 'drilling_status':
+                            this.handleDrillingStatus(data);
+                            break;
+                        case 'drilling_fsm_state':
+                            this.handleFsmState(data);
+                            break;
+                        case 'camera_frame':
+                            this.handleCameraFrame(data);
+                            break;
+                    }
+                } catch (e) {
+                    console.error("[DrillingControlView] Failed to parse message", e);
+                }
+            };
+
+            this.ws.onclose = () => {
+                console.warn("[DrillingControlView] Disconnected. Reconnecting in 3s...");
+                this.wsConnected = false;
+                this.updateConnectionStatus(false);
+                this.stopWebcam();
+                this.scheduleReconnect();
+            };
+
+            this.ws.onerror = (err) => {
+                console.error("[DrillingControlView] WebSocket error", err);
+                this.ws.close();
+            };
+        }
+
+        scheduleReconnect() {
+            if (this.reconnectInterval) return;
+            this.reconnectInterval = setInterval(() => {
+                console.log("[DrillingControlView] Attempting reconnect...");
+                this.initWS();
             }, 3000);
-        };
+        }
 
-        handleEditModeChange = (isEditing) => {
-            if (isEditing) {
-                this.stopRosWebcam();
-                this.displayWebcamStatus('Webcam: In edit mode. Stream paused.', 'info');
-            } else {
-                this.startRosWebcam();
-            }
-        };
-        
-        displayWebcamStatus = (message, type = 'info') => {
-            if (this.webcamStatusMessageElement) {
-                this.webcamStatusMessageElement.textContent = message;
-                this.webcamStatusMessageElement.classList.remove('info', 'error', 'warning');
-                this.webcamStatusMessageElement.classList.add(type);
-                this.webcamStatusMessageElement.style.display = 'block';
-            }
-        };
+        // ─── Publish drilling command over WS ───────────────────────────────
 
-        hideWebcamStatus = () => {
-            if (this.webcamStatusMessageElement) {
-                this.webcamStatusMessageElement.textContent = '';
-                this.webcamStatusMessageElement.classList.remove('info', 'error', 'warning');
-                this.webcamStatusMessageElement.style.display = 'none';
-            }
-        };
-        
-        startRosWebcam = () => {
-            if (!this.rosConnected) {
-                this.displayWebcamStatus('Waiting for ROS connection...', 'info');
+        publishDrillingCommand() {
+            if (this.currentRoverState.active_mission.toLowerCase() !== 'teleoperation') {
+                console.warn('Not in Teleoperation mode. Command not sent.');
+                if (this.openmct && this.openmct.notifications) {
+                    this.openmct.notifications.warn('Manual controls are disabled outside of Teleoperation mode.');
+                }
                 return;
             }
-            if (!this.webcamImageElement) {
-                this.displayWebcamStatus('Webcam display element not found.', 'error');
+
+            if (!this.wsConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                console.warn('[DrillingControlView] WS not connected. Command not sent.');
                 return;
             }
-            if (this.webcamSubscriber) {
-                console.log('Webcam subscriber already active.');
-                return;
+
+            // Use std_msgs/String-equivalent JSON payload
+            // Bridge publishes this to /drilling/command_to_actuators as std_msgs/String
+            this.ws.send(JSON.stringify({
+                type: 'drilling_cmd',
+                data: {
+                    target_height_cm: (this.currentManualInputState.manual_up || this.currentManualInputState.manual_down)
+                        ? 0.0
+                        : this.last_known_height,
+                    manual_up:   this.currentManualInputState.manual_up,
+                    manual_down: this.currentManualInputState.manual_down,
+                    auger_on:    this.currentManualInputState.auger_on,
+                    gate_open:   this.currentManualInputState.gate_open
+                }
+            }));
+
+            console.log('[DrillingControlView] Sent drilling command:', this.currentManualInputState);
+        }
+
+        // ─── Inbound message handlers ───────────────────────────────────────
+
+        handleRoverStatus(data) {
+            this.currentRoverState = {
+                rover_state:    data.rover_state    || 'UNKNOWN',
+                active_mission: data.active_mission || ''
+            };
+            this.updateManualControlUIState();
+        }
+
+        handleDrillingStatus(data) {
+            // Expects { current_height: float, current_weight: float }
+            const height = parseFloat(data.current_height) || 0.0;
+            const weight = parseFloat(data.current_weight) || 0.0;
+            this.last_known_height = height;
+
+            if (this.platformDepthDisplay) {
+                this.platformDepthDisplay.textContent = height.toFixed(1);
             }
-            
-            this.displayWebcamStatus('Connecting to ROS camera topic...', 'info');
-            
-            this.webcamSubscriber = new window.ROSLIB.Topic({
-                ros: this.ros,
-                name: '/logitech_1/image_raw/compressed', 
-                messageType: 'sensor_msgs/CompressedImage'
-            });
+            if (this.sampleWeightDisplay) {
+                this.sampleWeightDisplay.textContent = weight.toFixed(0);
+            }
+        }
 
-            this.webcamSubscriber.subscribe(this.handleImageMessage.bind(this));
-            console.log('Subscribed to ROS camera topic.');
-        };
+        handleFsmState(data) {
+            // Expects { data: "STATE_STRING" }  (std_msgs/String equivalent)
+            const state = typeof data === 'string' ? data : (data.data || '');
+            if (this.fsmStateDisplay) {
+                this.fsmStateDisplay.textContent = state;
+            }
+        }
 
-        handleImageMessage = (message) => {
-            const imageUri = `data:image/jpeg;base64,${message.data}`;
+        handleCameraFrame(data) {
+            // Expects { data: "<base64 jpeg>" }
+            if (!data || !data.data) return;
+            const src = `data:image/jpeg;base64,${data.data}`;
             if (this.webcamImageElement) {
-                this.webcamImageElement.src = imageUri;
+                this.webcamImageElement.src          = src;
                 this.webcamImageElement.style.display = 'block';
             }
             this.hideWebcamStatus();
             if (this.webcamSnapshotButton) {
                 this.webcamSnapshotButton.style.display = 'flex';
             }
-        };
+        }
 
-        stopRosWebcam = () => {
-            if (this.webcamSubscriber) {
-                this.webcamSubscriber.unsubscribe();
-                this.webcamSubscriber = null;
-                console.log('Unsubscribed from ROS camera topic.');
-            }
+        // ─── Webcam helpers ─────────────────────────────────────────────────
+
+        stopWebcam() {
             if (this.webcamImageElement) {
-                this.webcamImageElement.src = '';
+                this.webcamImageElement.src           = '';
                 this.webcamImageElement.style.display = 'none';
             }
             if (this.webcamSnapshotButton) {
                 this.webcamSnapshotButton.style.display = 'none';
             }
             this.displayWebcamStatus('Webcam stream paused/stopped.', 'info');
-        };
+        }
 
-        takeWebcamSnapshot = () => {
+        takeWebcamSnapshot() {
             if (!this.webcamImageElement || !this.webcamImageElement.src) {
-                console.warn('Webcam image not found or not loaded.');
                 if (this.openmct && this.openmct.notifications) {
-                    this.openmct.notifications.warn('Webcam feed not found.');
+                    this.openmct.notifications.warn('Webcam feed not available.');
                 }
                 return;
             }
-            
-            const link = document.createElement('a');
-            link.href = this.webcamImageElement.src;
-            link.download = 'webcam_snapshot.jpg';
+            const link      = document.createElement('a');
+            link.href       = this.webcamImageElement.src;
+            link.download   = `drilling-snapshot-${Date.now()}.jpg`;
             link.click();
 
             if (this.openmct && this.openmct.notifications) {
-                this.openmct.notifications.info('Webcam snapshot taken!');
+                this.openmct.notifications.info('Snapshot captured!');
             }
-        };
+        }
 
+        displayWebcamStatus(message, type = 'info') {
+            if (!this.webcamStatusMsgElement) return;
+            this.webcamStatusMsgElement.textContent = message;
+            this.webcamStatusMsgElement.className   = `drilling-webcam-status-message ${type}`;
+            this.webcamStatusMsgElement.style.display = 'block';
+        }
 
-        handleSnapshotButtonMouseDown = () => {
-            if (this.webcamSnapshotButton) {
-                this.webcamSnapshotButton.style.transform = 'translateX(-50%) scale(0.95)';
-                this.webcamSnapshotButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
-            }
-        };
+        hideWebcamStatus() {
+            if (!this.webcamStatusMsgElement) return;
+            this.webcamStatusMsgElement.style.display = 'none';
+        }
 
-        handleSnapshotButtonMouseUp = () => {
-            if (this.webcamSnapshotButton) {
-                this.webcamSnapshotButton.style.transform = 'translateX(-50%) scale(1)';
-                this.webcamSnapshotButton.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-            }
-        };
-
-        handleSnapshotButtonMouseLeave = () => {
-            if (this.webcamSnapshotButton) {
-                this.webcamSnapshotButton.style.transform = 'translateX(-50%) scale(1)';
-                this.webcamSnapshotButton.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-            }
-        };
+        // ─── Render ─────────────────────────────────────────────────────────
 
         render() {
             fetch('./plugins/Drilling-Control/DrillingControlView.html')
                 .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     return response.text();
                 })
                 .then(html => {
                     this.element.innerHTML = html;
-                    const link = document.createElement('link');
-                    link.rel = 'stylesheet';
-                    link.href = './plugins/Drilling-Control/DrillingControlView.css';
+
+                    const link  = document.createElement('link');
+                    link.rel    = 'stylesheet';
+                    link.href   = './plugins/Drilling-Control/DrillingControlView.css';
                     document.head.appendChild(link);
 
                     this.initializeUI();
-                    this.connectToROS();
-                    this.openmct.editor.on('isEditing', this.handleEditModeChange); 
+                    this.initWS();
+
+                    if (this.openmct && this.openmct.editor) {
+                        this.openmct.editor.on('isEditing', this.handleEditModeChange);
+                    }
                 })
                 .catch(error => {
                     console.error('Error loading DrillingControlView.html:', error);
-                    this.element.innerHTML = `<p style="color: red;">Error loading drilling control UI.</p>`;
+                    this.element.innerHTML = `<p style="color:red;">Error loading drilling control UI.</p>`;
                 });
         }
 
-        initializeUI() {
-            this.rosStatusDot = this.element.querySelector('#drillingRosStatusDot');
-            this.rosStatus = this.element.querySelector('#drillingRosStatus');
-            this.fsmStateDisplay = this.element.querySelector('#drillingFsmState');
-            this.platformDepthDisplay = this.element.querySelector('#drillingPlatformDepth');
-            this.sampleWeightDisplay = this.element.querySelector('#drillingSampleWeight');
+        // ─── UI init ────────────────────────────────────────────────────────
 
-            this.platformUpButton = this.element.querySelector('#drillingPlatformUpButton');
-            this.platformDownButton = this.element.querySelector('#drillingPlatformDownButton');
-            this.augerToggleSwitch = this.element.querySelector('#drillingAugerToggle');
-            this.gateToggleSwitch = this.element.querySelector('#drillingGateToggle');
+        initializeUI() {
+            this.rosStatusDot         = this.element.querySelector('#drillingRosStatusDot');
+            this.rosStatus            = this.element.querySelector('#drillingRosStatus');
+            this.fsmStateDisplay      = this.element.querySelector('#drillingFsmState');
+            this.platformDepthDisplay = this.element.querySelector('#drillingPlatformDepth');
+            this.sampleWeightDisplay  = this.element.querySelector('#drillingSampleWeight');
+            this.platformUpButton     = this.element.querySelector('#drillingPlatformUpButton');
+            this.platformDownButton   = this.element.querySelector('#drillingPlatformDownButton');
+            this.augerToggleSwitch    = this.element.querySelector('#drillingAugerToggle');
+            this.gateToggleSwitch     = this.element.querySelector('#drillingGateToggle');
 
             const webcamContainer = this.element.querySelector('#drillingWebcamContainer');
             if (webcamContainer) {
-                this.webcamImageElement = webcamContainer.querySelector('#drillingWebcamImage');
-                this.webcamSnapshotButton = webcamContainer.querySelector('#drillingSnapshotButton');
-                this.webcamInnerSnapshotCircle = this.webcamSnapshotButton.querySelector('.drilling-snapshot-inner-circle');
-                this.webcamStatusMessageElement = webcamContainer.querySelector('#drillingWebcamStatusMessage');
+                this.webcamImageElement     = webcamContainer.querySelector('#drillingWebcamImage');
+                this.webcamSnapshotButton   = webcamContainer.querySelector('#drillingSnapshotButton');
+                this.webcamStatusMsgElement = webcamContainer.querySelector('#drillingWebcamStatusMessage');
 
-                if (this.webcamImageElement) {
-                    this.webcamImageElement.style.display = 'none';
-                }
-                if (this.webcamSnapshotButton) {
-                    this.webcamSnapshotButton.style.display = 'none';
-                }
-                if (this.webcamStatusMessageElement) {
-                    this.webcamStatusMessageElement.style.display = 'block';
-                    this.displayWebcamStatus('Loading webcam...', 'info');
-                }
-            } else {
-                console.error("DrillingControlView: #drillingWebcamContainer not found in HTML. Webcam functionality will not work.");
-                const webcamAreaDiv = this.element.querySelector('.drilling-webcam-feed-wrapper');
-                if (webcamAreaDiv) {
-                    webcamAreaDiv.innerHTML = `<p style="color: red; text-align: center; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Error: Webcam container not found in HTML. Please ensure 'drillingWebcamContainer' ID exists.</p>`;
-                }
+                if (this.webcamImageElement)    this.webcamImageElement.style.display    = 'none';
+                if (this.webcamSnapshotButton)  this.webcamSnapshotButton.style.display  = 'none';
+                this.displayWebcamStatus('Waiting for WS connection...', 'info');
             }
 
             this.addEventListeners();
@@ -279,15 +279,15 @@
         }
 
         addEventListeners() {
-            const addMomentaryListener = (button, command, value) => {
-                if (button) {
-                    button.addEventListener('mousedown', () => { if (!button.disabled) this.handleManualButtonClick(command, value); });
-                    button.addEventListener('mouseup', () => { if (!button.disabled) this.handleManualButtonClick(command, false); });
-                    button.addEventListener('mouseleave', () => { if (!button.disabled) this.handleManualButtonClick(command, false); });
-                }
+            const addMomentary = (btn, cmd) => {
+                if (!btn) return;
+                btn.addEventListener('mousedown',  () => { if (!btn.disabled) this.handleManualButton(cmd, true);  });
+                btn.addEventListener('mouseup',    () => { if (!btn.disabled) this.handleManualButton(cmd, false); });
+                btn.addEventListener('mouseleave', () => { if (!btn.disabled) this.handleManualButton(cmd, false); });
             };
-            addMomentaryListener(this.platformUpButton, 'manual_up', true);
-            addMomentaryListener(this.platformDownButton, 'manual_down', true);
+
+            addMomentary(this.platformUpButton,   'manual_up');
+            addMomentary(this.platformDownButton, 'manual_down');
 
             if (this.augerToggleSwitch) {
                 this.augerToggleSwitch.addEventListener('change', () => {
@@ -299,283 +299,117 @@
                     this.handleSwitchChange('gate_open', this.gateToggleSwitch.checked);
                 });
             }
-
             if (this.webcamSnapshotButton) {
-                this.webcamSnapshotButton.addEventListener('click', this.takeWebcamSnapshot);
-                this.webcamSnapshotButton.addEventListener('mousedown', this.handleSnapshotButtonMouseDown);
-                this.webcamSnapshotButton.addEventListener('mouseup', this.handleSnapshotButtonMouseUp);
-                this.webcamSnapshotButton.addEventListener('mouseleave', this.handleSnapshotButtonMouseLeave);
+                this.webcamSnapshotButton.addEventListener('click',      () => this.takeWebcamSnapshot());
+                this.webcamSnapshotButton.addEventListener('mousedown',  () => {
+                    this.webcamSnapshotButton.style.transform  = 'translateX(-50%) scale(0.95)';
+                    this.webcamSnapshotButton.style.boxShadow  = '0 2px 4px rgba(0,0,0,0.2)';
+                });
+                this.webcamSnapshotButton.addEventListener('mouseup',    () => {
+                    this.webcamSnapshotButton.style.transform  = 'translateX(-50%) scale(1)';
+                    this.webcamSnapshotButton.style.boxShadow  = '0 4px 8px rgba(0,0,0,0.3)';
+                });
+                this.webcamSnapshotButton.addEventListener('mouseleave', () => {
+                    this.webcamSnapshotButton.style.transform  = 'translateX(-50%) scale(1)';
+                    this.webcamSnapshotButton.style.boxShadow  = '0 4px 8px rgba(0,0,0,0.3)';
+                });
             }
         }
-        
-        handleSwitchChange(commandType, value) {
+
+        handleManualButton(cmd, value) {
+            if (this.currentRoverState.active_mission.toLowerCase() !== 'teleoperation') return;
+            this.currentManualInputState[cmd] = value;
+            if (cmd === 'manual_up'   && value) this.currentManualInputState.manual_down = false;
+            if (cmd === 'manual_down' && value) this.currentManualInputState.manual_up   = false;
+            this.publishDrillingCommand();
+        }
+
+        handleSwitchChange(cmd, value) {
             if (this.currentRoverState.active_mission.toLowerCase() !== 'teleoperation') {
-                this.augerToggleSwitch.checked = this.currentManualInputState.auger_on;
-                this.gateToggleSwitch.checked = this.currentManualInputState.gate_open;
+                // Revert toggle
+                if (this.augerToggleSwitch) this.augerToggleSwitch.checked = this.currentManualInputState.auger_on;
+                if (this.gateToggleSwitch)  this.gateToggleSwitch.checked  = this.currentManualInputState.gate_open;
                 if (this.openmct && this.openmct.notifications) {
                     this.openmct.notifications.warn('Manual controls are disabled outside of Teleoperation mode.');
                 }
                 return;
             }
-            this.currentManualInputState[commandType] = value;
+            this.currentManualInputState[cmd] = value;
             this.publishDrillingCommand();
         }
 
-        publishDrillingCommand() {
-            if (this.currentRoverState.active_mission.toLowerCase() !== 'teleoperation') {
-                console.warn('Not in Teleoperation mode. Command not sent.');
-                if (this.openmct && this.openmct.notifications) {
-                    this.openmct.notifications.warn('Manual controls are disabled outside of Teleoperation mode.');
-                }
-                return;
+        handleEditModeChange = (isEditing) => {
+            if (isEditing) {
+                this.stopWebcam();
+                this.displayWebcamStatus('Webcam: In edit mode. Stream paused.', 'info');
             }
+            // Stream resumes automatically when new frames arrive after edit mode exits
+        };
 
-            if (!this.rosConnected || !this.drillingCommandPublisher) {
-                console.warn('ROS is not connected or command publisher is not initialized. Command not sent.');
-                return;
-            }
+        // ─── UI state ───────────────────────────────────────────────────────
 
-            if (typeof ROSLIB === 'undefined' || typeof ROSLIB.Message === 'undefined') {
-                console.error('ROSLIB or ROSLIB.Message is not defined. Cannot send command.');
-                return;
-            }
-            
-            let target_height = 0.0;
-            if (this.currentManualInputState.manual_up || this.currentManualInputState.manual_down) {
-                target_height = 0.0; 
-            } else {
-                target_height = this.last_known_height;
-            }
-
-            const drillingCommandMsg = new ROSLIB.Message({
-                target_height_cm: target_height,
-                manual_up: this.currentManualInputState.manual_up,
-                manual_down: this.currentManualInputState.manual_down,
-                auger_on: this.currentManualInputState.auger_on,
-                gate_open: this.currentManualInputState.gate_open
-            });
-
-            this.drillingCommandPublisher.publish(drillingCommandMsg);
-            console.log("Published Drilling Command:", drillingCommandMsg);
-        }
-
-        handleManualButtonClick(commandType, value) {
-            if (this.currentRoverState.active_mission.toLowerCase() !== 'teleoperation') {
-                return;
-            }
-
-            this.currentManualInputState[commandType] = value;
-            
-            if (commandType === 'manual_up' && value) {
-                this.currentManualInputState.manual_down = false;
-            } else if (commandType === 'manual_down' && value) {
-                this.currentManualInputState.manual_up = false;
-            }
-            
-            this.publishDrillingCommand();
-        }
-
-        connectToROS() {
-            if (typeof window.ROSLIB === 'undefined') {
-                console.error("ROSLIB is not defined. Ensure ros-lib.js is loaded.");
-                this.updateRosStatus(false, 'ROSLIB not loaded');
-                return;
-            }
-
-            this.ros = new window.ROSLIB.Ros({ url: 'ws://localhost:9090' });
-            this.ros.on('connection', this.handleRosConnection);
-            this.ros.on('error', this.handleRosError);
-            this.ros.on('close', this.handleRosClose);
-
-            this.drillingCommandPublisher = new window.ROSLIB.Topic({
-                ros: this.ros,
-                name: '/drilling/command_to_actuators',
-                messageType: 'roar_msgs/DrillingCommand'
-            });
-
-            this.drillingStatusSubscriber = new window.ROSLIB.Topic({
-                ros: this.ros,
-                name: '/drilling/feedback',
-                messageType: 'roar_msgs/DrillingStatus'
-            });
-            this.drillingStatusSubscriber.subscribe(this.handleDrillingStatus);
-            
-            this.fsmStateSubscriber = new window.ROSLIB.Topic({
-                ros: this.ros,
-                name: '/drilling_fsm_state',
-                messageType: 'std_msgs/String'
-            });
-            this.fsmStateSubscriber.subscribe(this.handleFsmState);
-
-            this.roverStatusSubscriber = new window.ROSLIB.Topic({
-                ros: this.ros,
-                name: '/rover_status',
-                messageType: 'roar_msgs/RoverStatus'
-            });
-            this.roverStatusSubscriber.subscribe(this.handleRoverStatus);
-        }
-
-        handleDrillingStatus = (message) => {
-            const positiveHeight =(message.current_height);
-            this.last_known_height = positiveHeight;
-            if (this.platformDepthDisplay) {
-                this.platformDepthDisplay.textContent = positiveHeight.toFixed(1);
-            }
-            if (this.sampleWeightDisplay) {
-                this.sampleWeightDisplay.textContent = message.current_weight.toFixed(0);
-            }
-        }
-        
-        handleFsmState = (message) => {
-            if (this.fsmStateDisplay) {
-                this.fsmStateDisplay.textContent = message.data;
+        updateConnectionStatus(connected) {
+            if (this.rosStatusDot) this.rosStatusDot.classList.toggle('connected', connected);
+            if (this.rosStatusDot) this.rosStatusDot.classList.toggle('error',     !connected);
+            if (this.rosStatus) {
+                this.rosStatus.textContent = connected ? 'Connected to ROS' : 'Disconnected';
+                this.rosStatus.classList.toggle('connected', connected);
+                this.rosStatus.classList.toggle('error',     !connected);
             }
         }
 
-        handleRoverStatus = (message) => {
-            this.currentRoverState = {
-                rover_state: message.rover_state,
-                active_mission: message.active_mission
-            };
-            console.log("Rover Status Received:", this.currentRoverState);
-            this.updateManualControlUIState();
-        }
+        updateManualControlUIState() {
+            const enabled = this.currentRoverState.active_mission.toLowerCase() === 'teleoperation';
 
-        updateManualControlUIState = () => {
-            const buttons = [
-                this.platformUpButton, this.platformDownButton,
-            ];
-            const switches = [
-                this.augerToggleSwitch, this.gateToggleSwitch
-            ];
-            const enableManualControls = this.currentRoverState.active_mission.toLowerCase() === 'teleoperation';
-
-            buttons.forEach(button => {
-                if (button) {
-                    button.disabled = !enableManualControls;
-                    if (enableManualControls) {
-                        button.classList.remove('disabled-manual-control');
-                    } else {
-                        button.classList.add('disabled-manual-control');
-                    }
-                }
-            });
-            
-            switches.forEach(sw => {
-                if (sw) {
-                    sw.disabled = !enableManualControls;
-                    const parentContainer = sw.closest('.drilling-switch-container');
-                    if (parentContainer) {
-                         if (enableManualControls) {
-                            parentContainer.classList.remove('disabled');
-                        } else {
-                            parentContainer.classList.add('disabled');
-                        }
-                    }
-                }
+            [this.platformUpButton, this.platformDownButton].forEach(btn => {
+                if (!btn) return;
+                btn.disabled = !enabled;
+                btn.classList.toggle('disabled-manual-control', !enabled);
             });
 
-            const manualControlMessage = this.element.querySelector('.drilling-control-section p');
-            if (manualControlMessage) {
-                if (enableManualControls) {
-                    manualControlMessage.textContent = 'These controls directly command the rig. They are active when the system is in "IDLE" state.';
-                    manualControlMessage.style.color = '#666';
+            [this.augerToggleSwitch, this.gateToggleSwitch].forEach(sw => {
+                if (!sw) return;
+                sw.disabled = !enabled;
+                const container = sw.closest('.drilling-switch-container');
+                if (container) container.classList.toggle('disabled', !enabled);
+            });
+
+            const note = this.element.querySelector('.drilling-control-section p');
+            if (note) {
+                if (enabled) {
+                    note.textContent  = 'These controls directly command the rig. Active in Teleoperation mode.';
+                    note.style.color  = '#666';
                 } else {
-                    manualControlMessage.textContent = `Manual controls are disabled outside of 'Teleoperation' mission. Current mission: ${this.currentRoverState.active_mission || 'None'}.`;
-                    manualControlMessage.style.color = '#e74c3c';
+                    note.textContent  = `Manual controls disabled. Current mission: ${this.currentRoverState.active_mission || 'None'}.`;
+                    note.style.color  = '#e74c3c';
                 }
             }
         }
 
-        updateRosStatus(isConnected, message = '') {
-            if (isConnected) {
-                this.rosConnected = true;
-                if (this.rosStatusDot) {
-                    this.rosStatusDot.classList.remove('error');
-                    this.rosStatusDot.classList.add('connected');
-                }
-                if (this.rosStatus) {
-                    this.rosStatus.textContent = 'Connected to ROS';
-                    this.rosStatus.classList.remove('error');
-                    this.rosStatus.classList.add('connected');
-                }
-            } else {
-                this.rosConnected = false;
-                if (this.rosStatusDot) {
-                    this.rosStatusDot.classList.remove('connected');
-                    this.rosStatusDot.classList.add('error');
-                }
-                if (this.rosStatus) {
-                    this.rosStatus.textContent = message || 'Disconnected';
-                    this.rosStatus.classList.remove('connected');
-                    this.rosStatus.classList.add('error');
-                }
-            }
-        }
-        
+        // ─── Destroy ────────────────────────────────────────────────────────
+
         destroy() {
-            console.log('Destroying DrillingControlView...');
-            
-            if (this.webcamSnapshotButton) {
-                this.webcamSnapshotButton.removeEventListener('click', this.takeWebcamSnapshot);
-                this.webcamSnapshotButton.removeEventListener('mousedown', this.handleSnapshotButtonMouseDown);
-                this.webcamSnapshotButton.removeEventListener('mouseup', this.handleSnapshotButtonMouseUp);
-                this.webcamSnapshotButton.removeEventListener('mouseleave', this.handleSnapshotButtonMouseLeave);
-            }
+            console.log('[DrillingControlView] Destroying...');
 
-            this.stopRosWebcam();
-
-            if (this.drillingCommandPublisher) {
-                this.drillingCommandPublisher.unadvertise();
-            }
-            if (this.drillingStatusSubscriber) {
-                this.drillingStatusSubscriber.unsubscribe();
-            }
-            if (this.fsmStateSubscriber) {
-                this.fsmStateSubscriber.unsubscribe();
-            }
-            if (this.roverStatusSubscriber) {
-                this.roverStatusSubscriber.unsubscribe();
-            }
-            
-            if (this.webcamSubscriber) {
-                this.webcamSubscriber.unsubscribe();
-            }
-
-            if (this.ros && this.ros.isConnected) {
-                this.ros.off('connection', this.handleRosConnection);
-                this.ros.off('error', this.handleRosError);
-                this.ros.off('close', this.handleRosClose);
-                this.ros.close();
-            }
+            if (this.reconnectInterval) clearInterval(this.reconnectInterval);
+            if (this.ws) this.ws.close();
 
             if (this.openmct && this.openmct.editor) {
                 this.openmct.editor.off('isEditing', this.handleEditModeChange);
             }
-            
-            this.platformUpButton = null;
-            this.platformDownButton = null;
-            this.augerToggleSwitch = null;
-            this.gateToggleSwitch = null;
-            this.webcamImageElement = null;
-            this.webcamStatusMessageElement = null;
-            this.webcamSnapshotButton = null;
-            this.webcamInnerSnapshotCircle = null;
-            this.rosStatusDot = null;
-            this.rosStatus = null;
-            this.fsmStateDisplay = null;
-            this.platformDepthDisplay = null;
-            this.sampleWeightDisplay = null;
-            this.ros = null;
-            this.openmct = null;
+
+            // Null out all refs
+            this.ws = this.ros = this.openmct = null;
+            this.platformUpButton = this.platformDownButton = null;
+            this.augerToggleSwitch = this.gateToggleSwitch = null;
+            this.webcamImageElement = this.webcamStatusMsgElement = this.webcamSnapshotButton = null;
+            this.rosStatusDot = this.rosStatus = this.fsmStateDisplay = null;
+            this.platformDepthDisplay = this.sampleWeightDisplay = null;
             this.currentRoverState = null;
-            this.roverStatusSubscriber = null;
-            this.webcamSubscriber = null;
 
             this.element.innerHTML = '';
         }
     }
 
     window.DrillingControlView = DrillingControlView;
-
 })();
