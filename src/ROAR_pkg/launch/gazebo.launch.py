@@ -40,7 +40,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
-        launch_arguments={'gz_args': '-r empty.sdf'}.items(),
+        launch_arguments={'gz_args': '-r empty.sdf '}.items(),
     )
 
     # --- 5. SPAWN THE ROBOT ---
@@ -49,7 +49,7 @@ def generate_launch_description():
         executable='create',
         arguments=['-name', 'New_ROAR_Arm',
                    '-file', tmp_urdf_path, # Load from file, not string!
-                   '-x', '0', '-y', '0', '-z', '0'],
+                   '-x', '0', '-y', '0', '-z', '0.075'],
         output='screen',
     )
 
