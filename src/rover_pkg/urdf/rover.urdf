@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="rover">
+
+  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+  <material name="dark_grey"><color rgba="0.3 0.3 0.3 1"/></material>
+  <material name="light_grey"><color rgba="0.7 0.7 0.7 1"/></material>
+
+  <link name="world"/>
+  
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.408253936014947 -0.19391136293197 0.0935980094970902" rpy="0 0 0" />
+      <mass value="19.4199616578523" />
+      <inertia ixx="0.152812970901627" ixy="-0.00244585357608738" ixz="-0.000119211140940003" iyy="0.145966230411945" iyz="-0.00431024466794356" izz="0.124513110100059" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/base_link.STL" />
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="Link_1">
+    <inertial>
+      <origin xyz="-0.00156351768447766 -0.0212429007740652 0.0705868097373353" rpy="0 0 0" />
+      <mass value="0.561896234898383" />
+      <inertia ixx="0.0011164394115988" ixy="-1.42607017750487E-05" ixz="3.5422965149192E-06" iyy="0.000877442427744072" iyz="-2.73241372439398E-05" izz="0.00121748395579074" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_1.STL" />
+      </geometry>
+      <material name="light_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_1.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="Joint_1" type="revolute">
+    <origin xyz="-0.36681 -0.39666 0.030332" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="Link_1" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-3.1416" upper="3.1416" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_2">
+    <inertial>
+      <origin xyz="0.145490788315616 0.13568456593099 -0.000326314782897352" rpy="0 0 0" />
+      <mass value="0.378308427244251" />
+      <inertia ixx="0.0033644871138459" ixy="-0.00313792316956031" ixz="-9.54389693919894E-06" iyy="0.00388550400978341" iyz="-7.40140307337242E-06" izz="0.0067921712516685" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_2.STL" />
+      </geometry>
+      <material name="light_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="Joint_2" type="revolute">
+    <origin xyz="0.0019782 0.035445 0.15315" rpy="1.5708 0 -1.6266" />
+    <parent link="Link_1" />
+    <child link="Link_2" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-2.4535" upper="0.01" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_3">
+    <inertial>
+      <origin xyz="-0.129446058863966 -0.164763451063462 1.44507377175529E-08" rpy="0 0 0" />
+      <mass value="0.222267217098964" />
+      <inertia ixx="0.00152291090454073" ixy="-0.000770754306463859" ixz="-1.24385994593765E-10" iyy="0.00114902188501397" iyz="-3.72240654350817E-10" izz="0.00165666927240579" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_3.STL" />
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_3.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="Joint_3" type="revolute">
+    <origin xyz="0.29426 0.27094 0" rpy="3.1416 0 3.1416" />
+    <parent link="Link_2" />
+    <child link="Link_3" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-1.5808" upper="1.5808" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_4">
+    <inertial>
+      <origin xyz="-0.00326866821493033 -0.00397867174864486 2.6116484158123E-05" rpy="0 0 0" />
+      <mass value="0.109599404146456" />
+      <inertia ixx="9.84588433441717E-05" ixy="-1.36524696250178E-05" ixz="1.17870690339296E-10" iyy="9.30569510400729E-05" iyz="-9.66833008249253E-11" izz="5.56848460448466E-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_4.STL" />
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_4.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="Joint_4" type="revolute">
+    <origin xyz="-0.22572 -0.28721 0" rpy="0 0 0" />
+    <parent link="Link_3" />
+    <child link="Link_4" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-1.5808" upper="1.5808" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_5">
+    <inertial>
+      <origin xyz="0.0174556429456011 -0.000530743084158458 0.0847629371321953" rpy="0 0 0" />
+      <mass value="0.502223999160853" />
+      <inertia ixx="0.000939562495155118" ixy="8.76282138631666E-05" ixz="-0.000300510511894145" iyy="0.00381890421314933" iyz="9.13710394959491E-06" izz="0.0034234453404858" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_5.STL" />
+      </geometry>
+      <material name="light_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_5.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="Joint_5" type="revolute">
+    <origin xyz="-0.039352 -0.047899 0" rpy="1.5708 -1.5277 -0.68774" />
+    <parent link="Link_4" />
+    <child link="Link_5" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-1.5808" upper="1.5808" effort="10.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_EE">
+    <inertial>
+      <origin xyz="-0.0508515726208259 0.0436615698042073 -0.0108277485823002" rpy="0 0 0" />
+      <mass value="0.187164825921408" />
+      <inertia ixx="0.0001951062890731" ixy="2.09908123335092E-05" ixz="-1.37415637830115E-06" iyy="0.000201530816976243" iyz="1.17984737697522E-06" izz="0.000337028680747643" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_EE.STL" />
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://rover_pkg/meshes/Link_EE.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="Joint_EE" type="prismatic">
+    <origin xyz="-0.11942 0.0036311 0.08366" rpy="1.5708 0.86133 1.5404" />
+    <parent link="Link_5" />
+    <child link="Link_EE" />
+    <axis xyz="0 0 -1" />
+    <limit lower="-0.1273" upper="0.01" effort="10.0" velocity="1.0" />
+  </joint>
+
+  <gazebo reference="base_link"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_1"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_2"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_3"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_4"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_5"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_EE"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+
+  <ros2_control name="RobotSystem" type="system">
+    <hardware>
+      <plugin>ign_ros2_control/IgnitionSystem</plugin>
+    </hardware>
+
+    <joint name="Joint_1">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_2">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_3">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_4">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_5">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="Joint_EE">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+      <parameters>package://rover_moveit/config/ros2_controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+</robot>
