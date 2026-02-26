@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <robot name="New_URDF">
 
- <link name="world"/>
+  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+  <material name="dark_grey"><color rgba="0.3 0.3 0.3 1"/></material>
+  <material name="light_grey"><color rgba="0.7 0.7 0.7 1"/></material>
+
+  <link name="world"/>
   
   <joint name="world_to_base" type="fixed">
     <parent link="world"/>
     <child link="base_link"/>
   </joint>
   
-  <!-- BASE LINK -->
   <link name="base_link">
     <inertial>
       <origin xyz="-0.3668 -0.3966 0.0019" rpy="0 0 0" />
@@ -18,10 +21,9 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <!-- FIXED PATH: ROAR_pkg -->
         <mesh filename="package://ROAR_pkg/meshes/base_link.STL" />
       </geometry>
-      <material name="grey"><color rgba="0.7 0.7 0.7 1.0"/></material>
+      <material name="black"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
@@ -31,13 +33,12 @@
     </collision>
   </link>
 
-  <!-- JOINT 1 -->
   <link name="Link_1">
     <visual>
       <geometry>
         <mesh filename="package://ROAR_pkg/meshes/Link_1.STL" />
       </geometry>
-      <material name="grey"/>
+      <material name="light_grey"/>
     </visual>
     <collision>
       <geometry>
@@ -58,13 +59,12 @@
     <limit lower="-1.5808" upper="1.5808" effort="10.0" velocity="2.0" />
   </joint>
 
-  <!-- JOINT 2 -->
   <link name="Link_2">
     <visual>
       <geometry>
         <mesh filename="package://ROAR_pkg/meshes/Link_2.STL" />
       </geometry>
-      <material name="grey"/>
+      <material name="light_grey"/>
     </visual>
     <collision>
       <geometry>
@@ -85,13 +85,12 @@
     <limit lower="-2.4535" upper="0.01" effort="10.0" velocity="2.0" />
   </joint>
 
-  <!-- JOINT 3 -->
   <link name="Link_3">
     <visual>
       <geometry>
         <mesh filename="package://ROAR_pkg/meshes/Link_3.STL" />
       </geometry>
-      <material name="grey"/>
+      <material name="black"/>
     </visual>
     <collision>
       <geometry>
@@ -112,13 +111,12 @@
     <limit lower="-1.5808" upper="1.5808" effort="10.0" velocity="2.0" />
   </joint>
 
-  <!-- JOINT 4 -->
   <link name="Link_4">
     <visual>
       <geometry>
         <mesh filename="package://ROAR_pkg/meshes/Link_4.STL" />
       </geometry>
-      <material name="silver"><color rgba="0.8 0.8 0.8 1.0"/></material>
+      <material name="black"/>
     </visual>
     <collision>
       <geometry>
@@ -139,13 +137,12 @@
     <limit lower="-1.5808" upper="1.5808" effort="10.0" velocity="2.0" />
   </joint>
 
-  <!-- JOINT 5 -->
   <link name="Link_5">
     <visual>
       <geometry>
         <mesh filename="package://ROAR_pkg/meshes/Link_5.STL" />
       </geometry>
-      <material name="blue"><color rgba="0.0 0.0 0.8 1.0"/></material>
+      <material name="light_grey"/>
     </visual>
     <collision>
       <geometry>
@@ -166,13 +163,12 @@
     <limit lower="-1.5808" upper="1.5808" effort="10.0" velocity="2.0" />
   </joint>
 
-  <!-- JOINT EE -->
   <link name="Link_EE">
     <visual>
       <geometry>
         <mesh filename="package://ROAR_pkg/meshes/Link_EE.STL" />
       </geometry>
-      <material name="grey"/>
+      <material name="black"/>
     </visual>
     <collision>
       <geometry>
@@ -193,7 +189,15 @@
     <limit lower="-0.1273" upper="0.01" effort="10.0" velocity="1.0" />
   </joint>
 
-<ros2_control name="RobotSystem" type="system">
+  <gazebo reference="base_link"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_1"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_2"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_3"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_4"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_5"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_EE"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+
+  <ros2_control name="RobotSystem" type="system">
     <hardware>
       <plugin>ign_ros2_control/IgnitionSystem</plugin>
     </hardware>
