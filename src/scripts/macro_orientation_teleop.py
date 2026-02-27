@@ -29,10 +29,11 @@ from shape_msgs.msg import SolidPrimitive
 from sensor_msgs.msg import JointState
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from collision_guard import CollisionGuard
 import sys, termios, threading
 
 LINK_NAME   = "Link_5"
-GROUP_NAME  = "arm_controller"
+GROUP_NAME  = "rover_arm"
 FRAME_ID    = "world"
 DEFAULT_CM  = 1.0
 
@@ -52,7 +53,7 @@ DIRECTION_MAP = {
 
 msg = """
 ┌──────────────────────────────────────────────┐
-│    legacy Teleop — Macro Orientation Mode      │
+│   ROVER Teleop — Macro Orientation Mode      │
 ├──────────────────────────────────────────────┤
 │  MOVEMENT (all distances in cm):             │
 │    "w"        → forward 1 cm (default)       │
@@ -109,6 +110,7 @@ class MacroOrientationTeleop(Node):
         self.joint_sub = self.create_subscription(
             JointState, "joint_states", self._joint_state_cb, 10
         )
+        self.collision_guard = CollisionGuard(self, GROUP_NAME)
 
         self.macros: dict[int, Macro | None] = {1: None, 2: None, 3: None}
         self.locked = False
@@ -226,6 +228,13 @@ class MacroOrientationTeleop(Node):
                 constraints.joint_constraints.append(jc)
 
         goal_msg.request.goal_constraints.append(constraints)
+
+        ok, reason = self.collision_guard.check_current_state(self.joint_positions)
+        if not ok:
+            self.get_logger().warn(f"Blocked by collision guard: {reason}")
+            self.goal_done.set()
+            return
+
         self._action_client.wait_for_server()
         self._send_goal_future = self._action_client.send_goal_async(goal_msg)
         self._send_goal_future.add_done_callback(self._goal_response_cb)

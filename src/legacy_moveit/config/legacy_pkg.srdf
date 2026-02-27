@@ -34,8 +34,8 @@
         <joint name="Joint_1" value="1.8572"/>
         <joint name="Joint_2" value="-1.0588"/>
         <joint name="Joint_3" value="2.1002"/>
-        <joint name="Joint_4" value="-1.6142"/>
-        <joint name="Joint_5" value="-1.5101"/>
+        <joint name="Joint_4" value="0.0"/>
+        <joint name="Joint_5" value="0.0"/>
     </group_state>
     <group_state name="close" group="hand_controller">
         <joint name="Follower_Gear_Joint" value="0"/>

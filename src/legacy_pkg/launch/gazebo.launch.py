@@ -49,7 +49,7 @@ def generate_launch_description():
         executable='create',
         arguments=['-name', 'New_legacy_Arm',
                    '-file', tmp_urdf_path, # Load from file, not string!
-                   '-x', '0', '-y', '0', '-z', '0.0'],
+                   '-x', '0', '-y', '0', '-z', '0.02'],
         output='screen',
     )
 
@@ -67,8 +67,7 @@ def generate_launch_description():
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
-            '/clock@rosgraph_msgs/msg/Clock[ign.msgs.Clock',
-            '/joint_states@sensor_msgs/msg/JointState[ign.msgs.Model',
+            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
         ],
         output='screen'
     )
