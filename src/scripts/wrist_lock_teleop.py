@@ -22,10 +22,11 @@ from shape_msgs.msg import SolidPrimitive
 from sensor_msgs.msg import JointState
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from collision_guard import CollisionGuard
 import sys, select, termios, tty, threading
 
 LINK_NAME   = "Link_5"
-GROUP_NAME  = "arm_controller"
+GROUP_NAME  = "rover_arm"
 FRAME_ID    = "world"
 DEFAULT_CM  = 1.0
 
@@ -45,7 +46,7 @@ DIRECTION_MAP = {
 
 msg = """
 ┌─────────────────────────────────────────────┐
-│      legacy Teleop — Wrist Lock Mode          │
+│     ROVER Teleop — Wrist Lock Mode          │
 ├─────────────────────────────────────────────┤
 │  MOVEMENT COMMANDS:                         │
 │    w / s  → X axis  (forward / back)        │
@@ -80,6 +81,7 @@ class WristLockedTeleop(Node):
         self.joint_sub = self.create_subscription(
             JointState, "joint_states", self._joint_state_cb, 10
         )
+        self.collision_guard = CollisionGuard(self, GROUP_NAME)
         self.wrist_locked = False
         self.locked_pitch = 0.0
         self.locked_twist = 0.0
@@ -168,6 +170,13 @@ class WristLockedTeleop(Node):
                 constraints.joint_constraints.append(jc)
 
         goal_msg.request.goal_constraints.append(constraints)
+
+        ok, reason = self.collision_guard.check_current_state(self.joint_positions)
+        if not ok:
+            self.get_logger().warn(f"Blocked by collision guard: {reason}")
+            self.goal_done.set()
+            return
+
         self._action_client.wait_for_server()
         self._send_goal_future = self._action_client.send_goal_async(goal_msg)
         self._send_goal_future.add_done_callback(self._goal_response_cb)

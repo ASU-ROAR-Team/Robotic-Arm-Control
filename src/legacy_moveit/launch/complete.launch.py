@@ -19,25 +19,38 @@ def generate_launch_description():
         ])
     ) 
     
-    # 3. INCLUDE moveit
-    moveit_node = IncludeLaunchDescription(
+    # 3. INCLUDE moveit (without demo stack to avoid duplicate ros2_control/spawners)
+    move_group_node = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
-            os.path.join(moveit_pkg_path, 'launch', 'demo.launch.py')
+            os.path.join(moveit_pkg_path, 'launch', 'move_group.launch.py')
         ]),
         launch_arguments={'use_sim_time': 'true'}.items()
-    ) 
+    )
+
+    moveit_rviz_node = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            os.path.join(moveit_pkg_path, 'launch', 'moveit_rviz.launch.py')
+        ]),
+        launch_arguments={'use_sim_time': 'true'}.items()
+    )
     
-    # 4. STABLE DELAY (The Fix)
-    # Instead of watching a process, we just wait 5 seconds.
-    # This prevents the crash and gives Gazebo time to load.
-    delay_moveit = TimerAction(
-        period=5.0, 
-        actions=[moveit_node]
+    # 4. STAGGERED STARTUP
+    # Give Gazebo + ros2_control enough time to initialize sim clock and controllers,
+    # then start MoveIt first and RViz shortly after.
+    delay_move_group = TimerAction(
+        period=8.0,
+        actions=[move_group_node]
+    )
+
+    delay_rviz = TimerAction(
+        period=11.0,
+        actions=[moveit_rviz_node]
     )
     
     return LaunchDescription([ 
         # Global setting to tell all nodes "Look at the Gazebo Clock, not the Wall Clock"
         SetParameter(name="use_sim_time", value=True), 
         lab_gazebo, 
-        delay_moveit, 
+        delay_move_group,
+        delay_rviz,
     ])

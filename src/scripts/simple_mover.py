@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""
-simple_mover.py — Position-only XYZ teleop
--------------------------------------------
-kinematics.yaml: KDL, position_only_ik: true
-
-INPUT MODES:
-  Single key        → move 1cm in that direction
-  "w 5" + Enter     → move 5cm forward
-  "s 3.5" + Enter   → move 3.5cm back
-  etc.
-"""
-
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -18,205 +6,196 @@ from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import Constraints, PositionConstraint
 from shape_msgs.msg import SolidPrimitive
+from sensor_msgs.msg import JointState
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-import sys, select, termios, tty, threading
+from collision_guard import CollisionGuard
+import sys
+import threading
 
-LINK_NAME  = "Link_5"
-GROUP_NAME = "arm_controller"
-FRAME_ID   = "world"
-DEFAULT_CM = 1.0   # cm used when no distance is typed
+# === CONFIGURATION (Updated for New_rover_Arm) ===
+# The tip link of your arm chain (before the gripper)
+# Sourced from your URDF: <link name="Link_5">
+LINK_NAME = "Link_5"  
 
-DIRECTION_MAP = {
-    "w": ( 1,  0,  0),
-    "s": (-1,  0,  0),
-    "a": ( 0,  1,  0),
-    "d": ( 0, -1,  0),
-    "q": ( 0,  0,  1),
-    "e": ( 0,  0, -1),
-}
+# The MoveIt planning group for the arm joints
+# Sourced from your SRDF: <group name="rover_arm">
+GROUP_NAME = "rover_arm"  
 
-msg = """
-┌─────────────────────────────────────────────┐
-│         legacy Teleop — Simple Mover          │
-├─────────────────────────────────────────────┤
-│  DIRECTIONS:                                │
-│    w / s  → X axis  (forward / back)        │
-│    a / d  → Y axis  (left / right)          │
-│    q / e  → Z axis  (up / down)             │
-│                                             │
-│  INPUT MODES:                               │
-│    Single key          → move 1 cm          │
-│    "w 5"  + Enter      → move 5 cm fwd      │
-│    "s 3.5" + Enter     → move 3.5 cm back   │
-│    "q 10" + Enter      → move 10 cm up      │
-│                                             │
-│    x  → Quit                                │
-└─────────────────────────────────────────────┘
-"""
+# The fixed world frame
+FRAME_ID = "world"
 
-
-class SimpleMover(Node):
+class MoveRobotInteractive(Node):
     def __init__(self):
-        super().__init__("simple_mover")
-        self._action_client = ActionClient(self, MoveGroup, "move_action")
+        super().__init__('move_robot_interactive')
+        
+        # 1. Action Client (To Send Commands to MoveIt)
+        self._action_client = ActionClient(self, MoveGroup, 'move_action')
+        
+        # 2. TF Listener (To Know Where the Arm Is)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.current_joints = {}
+        self.create_subscription(JointState, "joint_states", self._joint_state_cb, 10)
+        self.collision_guard = CollisionGuard(self, GROUP_NAME)
+        
         self.goal_done = threading.Event()
-        self.goal_done.set()
+        self.goal_done.set() # Ready to start
+
+    def _joint_state_cb(self, msg):
+        for name, pos in zip(msg.name, msg.position):
+            self.current_joints[name] = pos
 
     def get_current_pos(self):
         try:
+            # Wait up to 1 second for the transform
+            now = rclpy.time.Time()
             trans = self.tf_buffer.lookup_transform(
-                FRAME_ID, LINK_NAME,
-                rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=1.0),
+                FRAME_ID, 
+                LINK_NAME, 
+                now, 
+                timeout=rclpy.duration.Duration(seconds=1.0)
             )
             return trans.transform.translation
         except Exception as e:
-            self.get_logger().error(f"TF lookup failed: {e}")
+            self.get_logger().error(f"Could not find robot position: {e}")
             return None
 
     def send_relative_goal(self, dx, dy, dz):
-        if not self.goal_done.is_set():
-            self.get_logger().warn("Still executing previous move, ignoring.")
-            return
-
         self.goal_done.clear()
+        
+        # 1. Get Current Position
         current = self.get_current_pos()
         if current is None:
             self.goal_done.set()
             return
 
-        goal_msg = MoveGroup.Goal()
-        goal_msg.request.group_name = GROUP_NAME
-        goal_msg.request.allowed_planning_time = 3.0
-        goal_msg.request.num_planning_attempts = 10
-        goal_msg.request.max_velocity_scaling_factor = 0.3
-        goal_msg.request.max_acceleration_scaling_factor = 0.3
+        target_x = current.x + dx
+        target_y = current.y + dy
+        target_z = current.z + dz
+        
+        print(f"Moving from ({current.x:.2f}, {current.y:.2f}, {current.z:.2f}) -> ({target_x:.2f}, {target_y:.2f}, {target_z:.2f})")
 
+        # 2. Construct MoveGroup Goal
+        goal_msg = MoveGroup.Goal()
+        goal_msg.request.workspace_parameters.header.frame_id = FRAME_ID
+        goal_msg.request.group_name = GROUP_NAME
+        goal_msg.request.allowed_planning_time = 10.0  # 5 seconds to plan
+        goal_msg.request.num_planning_attempts = 100   
+        
+        # Create Constraints
         constraints = Constraints()
-        pos_c = PositionConstraint()
-        pos_c.header.frame_id = FRAME_ID
-        pos_c.link_name = LINK_NAME
-        pos_c.weight = 1.0
-        box = SolidPrimitive()
-        box.type = SolidPrimitive.BOX
-        box.dimensions = [0.01, 0.01, 0.01]
-        pos_c.constraint_region.primitives.append(box)
-        pose = PoseStamped()
-        pose.header.frame_id = FRAME_ID
-        pose.pose.position.x = current.x + dx
-        pose.pose.position.y = current.y + dy
-        pose.pose.position.z = current.z + dz
-        pose.pose.orientation.w = 1.0
-        pos_c.constraint_region.primitive_poses.append(pose.pose)
-        constraints.position_constraints.append(pos_c)
+        pos_constraint = PositionConstraint()
+        pos_constraint.header.frame_id = FRAME_ID
+        pos_constraint.link_name = LINK_NAME
+        
+        # Create a small target box for the end effector to reach
+        target_box = SolidPrimitive()
+        target_box.type = SolidPrimitive.BOX
+        target_box.dimensions = [0.01, 0.01, 0.01] # 1cm tolerance box
+        pos_constraint.constraint_region.primitives.append(target_box)
+        
+        target_pose = PoseStamped()
+        target_pose.header.frame_id = FRAME_ID
+        target_pose.pose.position.x = target_x
+        target_pose.pose.position.y = target_y
+        target_pose.pose.position.z = target_z
+        
+        pos_constraint.constraint_region.primitive_poses.append(target_pose.pose)
+        pos_constraint.weight = 1.0
+        constraints.position_constraints.append(pos_constraint)
         goal_msg.request.goal_constraints.append(constraints)
 
-        self._action_client.wait_for_server()
-        self._send_goal_future = self._action_client.send_goal_async(goal_msg)
-        self._send_goal_future.add_done_callback(self._goal_response_cb)
-
-    def _goal_response_cb(self, future):
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.get_logger().warn("Goal rejected.")
+        ok, reason = self.collision_guard.check_current_state(self.current_joints)
+        if not ok:
+            self.get_logger().warn(f"Blocked by collision guard: {reason}")
             self.goal_done.set()
             return
-        self._get_result_future = goal_handle.get_result_async()
-        self._get_result_future.add_done_callback(self._result_cb)
 
-    def _result_cb(self, future):
+        # 3. Send Goal
+        self._action_client.wait_for_server()
+        self._send_goal_future = self._action_client.send_goal_async(goal_msg)
+        self._send_goal_future.add_done_callback(self.goal_response_callback)
+
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            print("Goal rejected (Check if MoveIt is running/Group name is correct).")
+            self.goal_done.set()
+            return
+
+        print("Planning & Executing...")
+        self._get_result_future = goal_handle.get_result_async()
+        self._get_result_future.add_done_callback(self.get_result_callback)
+
+    def get_result_callback(self, future):
         result = future.result().result
-        if result.error_code.val != 1:
-            self.get_logger().warn(f"Move failed (code {result.error_code.val})")
+        if result.error_code.val == 1:
+            print(">>> SUCCESS <<<")
         else:
-            self.get_logger().info("Move succeeded.")
+            print(f">>> FAILED (Error Code: {result.error_code.val}) <<<")
         self.goal_done.set()
 
-
-def parse_command(raw: str):
-    """
-    Parse user input. Returns (dx, dy, dz) in metres, or None if invalid.
-    Accepts:  "w"  →  1cm default
-              "w 5"  →  5cm
-              "w5"   →  5cm
-    """
-    raw = raw.strip().lower()
-    if not raw:
-        return None
-
-    direction = raw[0]
-    if direction not in DIRECTION_MAP:
-        return None
-
-    # Extract distance
-    rest = raw[1:].strip()
-    if rest == "":
-        cm = DEFAULT_CM
-    else:
+def user_input_thread(node):
+    print("-------------------------------------------------")
+    print(" Interactive Controller Active")
+    print(" Commands: 'x 0.05'  (Move X by 5cm)")
+    print("           'z -0.1'  (Move Z down 10cm)")
+    print("           'y 0.01'  (Move Y by 1cm)")
+    print("           'q'       (Quit)")
+    print("-------------------------------------------------")
+    
+    # Give ROS time to initialize
+    import time
+    time.sleep(2)
+    
+    while rclpy.ok():
         try:
-            cm = float(rest)
-        except ValueError:
-            return None
-
-    metres = cm / 100.0
-    sx, sy, sz = DIRECTION_MAP[direction]
-    return sx * metres, sy * metres, sz * metres
-
-
-def user_input_thread(node: SimpleMover):
-    settings = termios.tcgetattr(sys.stdin)
-    print(msg)
-
-    try:
-        while rclpy.ok():
-            # Restore normal line mode so user can type multi-char commands
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-            sys.stdout.write("cmd> ")
-            sys.stdout.flush()
-
-            # Read a line (blocking, but quitting with x works)
-            try:
-                line = sys.stdin.readline()
-            except EOFError:
-                break
-
-            if not line:
-                continue
-
-            line = line.strip()
-
-            if line == "x":
-                print("Exiting...")
+            cmd = input("Enter Command: ").strip().split()
+            if not cmd: continue
+            
+            axis = cmd[0].lower()
+            if axis == 'q':
+                print("Quitting...")
                 rclpy.shutdown()
                 break
-
-            result = parse_command(line)
-            if result is None:
-                print(f"  Unknown command '{line}'. Use: w/a/s/d/q/e [cm]  e.g. 'w 5'")
+            
+            if len(cmd) < 2:
+                print("Invalid format. Use: axis amount (e.g., 'x 0.1')")
                 continue
 
-            dx, dy, dz = result
-            cm_moved = (dx**2 + dy**2 + dz**2) ** 0.5 * 100
-            node.get_logger().info(
-                f"Moving: '{line[0].upper()}' axis  {cm_moved:.1f} cm  "
-                f"Δ({dx:+.4f}, {dy:+.4f}, {dz:+.4f}) m"
-            )
+            val = float(cmd[1])
+            dx, dy, dz = 0.0, 0.0, 0.0
+            
+            if axis == 'x': dx = val
+            elif axis == 'y': dy = val
+            elif axis == 'z': dz = val
+            else:
+                print("Unknown axis. Use x, y, or z.")
+                continue
+                
+            # Send the command
             node.send_relative_goal(dx, dy, dz)
-
-    except Exception as e:
-        print(e)
-    finally:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-
+            
+            # Wait for completion
+            node.goal_done.wait()
+            node.goal_done.clear()
+            
+        except ValueError:
+            print("Please enter a valid number.")
+        except Exception as e:
+            print(f"Error: {e}")
+            break
 
 def main():
     rclpy.init()
-    node = SimpleMover()
+    node = MoveRobotInteractive()
+    
+    # Run user input in a separate thread so ROS callbacks can keep spinning
     thread = threading.Thread(target=user_input_thread, args=(node,), daemon=True)
     thread.start()
+    
+    # Spin the ROS node in the main thread
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -224,6 +203,5 @@ def main():
     finally:
         rclpy.shutdown()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

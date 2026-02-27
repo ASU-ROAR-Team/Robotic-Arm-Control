@@ -21,9 +21,9 @@ class WristDebugMonitor(Node):
             10
         )
         
-        # CHANGE THESE to match your exact URDF joint names
-        self.pitch_joint_name = 'wrist_pitch_joint'
-        self.roll_joint_name = 'wrist_roll_joint'
+        # Legacy URDF wrist joints
+        self.pitch_joint_name = 'Joint_4'
+        self.roll_joint_name = 'Joint_5'
 
         self.get_logger().info("Wrist Monitor Started. Waiting for RViz...")
 

@@ -144,7 +144,7 @@
   <gazebo reference="Right_Gripper"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
 
   <ros2_control name="RobotSystem" type="system">
-    <hardware><plugin>ign_ros2_control/IgnitionSystem</plugin></hardware>
+    <hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>
     <joint name="Joint_1"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
     <joint name="Joint_2"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
     <joint name="Joint_3"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
@@ -157,7 +157,7 @@
   </ros2_control>
 
   <gazebo>
-    <plugin filename="ign_ros2_control-system" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
       <parameters>package://legacy_moveit/config/ros2_controllers.yaml</parameters>
     </plugin>
   </gazebo>
