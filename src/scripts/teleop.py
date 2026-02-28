@@ -40,9 +40,16 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoS
 from collision_guard import CollisionGuard
 import sys, termios, threading, math
 import json
+import os
+import xml.etree.ElementTree as ET
+
+try:
+    from ament_index_python.packages import get_package_share_directory
+except Exception:
+    get_package_share_directory = None
 
 LINK_NAME   = "Link_5"
-GROUP_NAME  = "rover_arm"
+GROUP_NAME  = "arm_controller"
 FRAME_ID    = "world"
 BASE_FRAME  = "base_link"
 DEFAULT_CM  = 1.0
@@ -68,6 +75,7 @@ HOME_JOINTS = {
     "Joint_4": math.radians(0.0),
     "Joint_5": math.radians(0.0),
 }
+ARM_JOINTS = ["Joint_1", "Joint_2", "Joint_3", "Joint_4", "Joint_5"]
 
 DIRECTION_MAP = {
     "w": (+1,  0,  0), "s": (-1,  0,  0),
@@ -102,19 +110,85 @@ msg = f"""
 │    rz  / rz-  → Joint_1 yaw + / -                      │
 │    ry  / ry-  → Joint_2 shoulder + / -                 │
 │    rx  / rx-  → Joint_3 elbow + / -                    │
-│    "rz 10" = move that joint by 10°                   │
+│    "rz 10" = move that joint by 10°                    │
 │                                                        │
 │  ORIENTATION LOCK (J4 pitch + J5 twist):               │
 │    c  → lock current orientation                       │
 │    u  → unlock                                         │
 │                                                        │
-│  HOME MACRO:                                            │
+│  HOME MACRO:                                           │
 │    h  → move to saved HOME joint pose                  │
 │                                                        │
 │    p  → print joints + lock status + EE position       │
 │    x  → quit                                           │
 └────────────────────────────────────────────────────────┘
 """
+
+
+def _resolve_urdf_path() -> str | None:
+    if get_package_share_directory is not None:
+        try:
+            return os.path.join(get_package_share_directory("legacy_pkg"), "urdf", "legacy.urdf")
+        except Exception:
+            pass
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "legacy_pkg", "urdf", "legacy.urdf"))
+
+
+def _load_arm_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list[str], dict[str, tuple[float, float]]]:
+    urdf_path = _resolve_urdf_path()
+    if not urdf_path or not os.path.exists(urdf_path):
+        return ARM_JOINTS, JOINT_LIMITS.copy()
+
+    try:
+        root = ET.parse(urdf_path).getroot()
+    except Exception:
+        return ARM_JOINTS, JOINT_LIMITS.copy()
+
+    joints_by_child = {}
+    for joint in root.findall("joint"):
+        child = joint.find("child")
+        if child is not None and child.get("link"):
+            joints_by_child[child.get("link")] = joint
+
+    chain = []
+    link = ee_link
+    while link != base_link and link in joints_by_child:
+        joint = joints_by_child[link]
+        chain.append(joint)
+        parent = joint.find("parent")
+        if parent is None or not parent.get("link"):
+            break
+        link = parent.get("link")
+
+    chain.reverse()
+    joint_names = []
+    limits: dict[str, tuple[float, float]] = {}
+    for joint in chain:
+        j_type = (joint.get("type") or "").lower()
+        if j_type not in ("revolute", "prismatic", "continuous"):
+            continue
+
+        j_name = joint.get("name")
+        if not j_name:
+            continue
+
+        if j_type == "continuous":
+            lo, hi = -math.pi, math.pi
+        else:
+            lim = joint.find("limit")
+            if lim is None:
+                continue
+            lo = float(lim.get("lower", "0.0"))
+            hi = float(lim.get("upper", "0.0"))
+
+        joint_names.append(j_name)
+        limits[j_name] = (lo, hi)
+
+    if len(joint_names) < 3:
+        return ARM_JOINTS, JOINT_LIMITS.copy()
+    return joint_names, limits
+
+
 class Teleop(Node):
     def __init__(self):
         super().__init__("rover_teleop")
@@ -124,6 +198,11 @@ class Teleop(Node):
         self.done = threading.Event()
         self.done.set()
         self.joints: dict[str, float] = {}
+        self.arm_joint_names, self.joint_limits = _load_arm_joint_limits_from_urdf(BASE_FRAME, LINK_NAME)
+        self.home_joints = {
+            jn: max(self.joint_limits[jn][0], min(self.joint_limits[jn][1], HOME_JOINTS.get(jn, 0.0)))
+            for jn in self.arm_joint_names
+        }
         self.create_subscription(JointState, "joint_states", self._js, 10)
         self.locked = False
         self.locked_pitch = 0.0
@@ -136,6 +215,9 @@ class Teleop(Node):
         )
         self.lock_pub = self.create_publisher(String, "/rover/orientation_lock", lock_qos)
         self.collision_guard = CollisionGuard(self, GROUP_NAME)
+        self.get_logger().info(
+            f"Using group='{GROUP_NAME}', joints={self.arm_joint_names}, urdf_limits_loaded={bool(self.arm_joint_names)}"
+        )
         self._publish_lock_state()
 
     def _publish_lock_state(self):
@@ -184,7 +266,7 @@ class Teleop(Node):
                     f"J5={math.degrees(self.locked_twist):.1f}°"
                     if self.locked else "free")
         lines = ["", "═══ Status ═══", f"  Lock: {lock_str}", "  Joints:"]
-        for n in ["Joint_1","Joint_2","Joint_3","Joint_4","Joint_5"]:
+        for n in self.arm_joint_names:
             v = self.joints.get(n, float("nan"))
             lines.append(f"    {n}  {v:+.4f} rad  ({math.degrees(v):+.1f}°)")
         p = self._tf(FRAME_ID, LINK_NAME)
@@ -221,7 +303,7 @@ class Teleop(Node):
         return jc
 
     def _clamp_joint(self, joint_name: str, value: float):
-        lo, hi = JOINT_LIMITS[joint_name]
+        lo, hi = self.joint_limits[joint_name]
         return max(lo, min(hi, value))
 
     def _pos_constraint(self, x, y, z, tol=0.01):
@@ -264,11 +346,11 @@ class Teleop(Node):
         self.done.clear()
 
         c = Constraints()
-        for jn in ["Joint_1", "Joint_2", "Joint_3", "Joint_4", "Joint_5"]:
-            c.joint_constraints.append(self._joint_constraint(jn, HOME_JOINTS[jn], tol=0.03))
+        for jn in self.arm_joint_names:
+            c.joint_constraints.append(self._joint_constraint(jn, self.home_joints[jn], tol=0.03))
 
         self.get_logger().info(
-            "HOME -> J1=0°, J2=0°, J3=0°, J4=0°, J5=0°"
+            "HOME -> " + ", ".join(f"{jn}={math.degrees(self.home_joints[jn]):.0f}°" for jn in self.arm_joint_names)
         )
         self._send(c)
 
