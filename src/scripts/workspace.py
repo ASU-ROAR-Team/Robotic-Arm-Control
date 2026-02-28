@@ -32,22 +32,93 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 import numpy as np
 import argparse, math, sys, time
+import os
+import xml.etree.ElementTree as ET
+
+try:
+    from ament_index_python.packages import get_package_share_directory
+except Exception:
+    get_package_share_directory = None
 
 # =====================================================================
-# Your actual URDF joint limits
+# Defaults (used only if URDF cannot be loaded)
 # =====================================================================
-JOINT_LIMITS = {
+DEFAULT_JOINT_LIMITS = {
     "Joint_1": (-0.0170,  3.1590),
     "Joint_2": (-2.6350,  0.0170),
     "Joint_3": (-0.0170,  3.1590),
     "Joint_4": (-0.0170,  3.1590),
     "Joint_5": (-0.0170,  3.1590),
 }
-JOINT_NAMES = list(JOINT_LIMITS.keys())
+DEFAULT_JOINT_NAMES = list(DEFAULT_JOINT_LIMITS.keys())
 EE_LINK     = "Link_5"
 WORLD_FRAME = "world"
 BASE_FRAME  = "base_link"
 # =====================================================================
+
+
+def resolve_urdf_path() -> str | None:
+    if get_package_share_directory is not None:
+        try:
+            return os.path.join(get_package_share_directory("legacy_pkg"), "urdf", "legacy.urdf")
+        except Exception:
+            pass
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "legacy_pkg", "urdf", "legacy.urdf"))
+
+
+def load_chain_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list[str], dict[str, tuple[float, float]], str | None]:
+    urdf_path = resolve_urdf_path()
+    if not urdf_path or not os.path.exists(urdf_path):
+        return DEFAULT_JOINT_NAMES, DEFAULT_JOINT_LIMITS.copy(), None
+
+    try:
+        root = ET.parse(urdf_path).getroot()
+    except Exception:
+        return DEFAULT_JOINT_NAMES, DEFAULT_JOINT_LIMITS.copy(), urdf_path
+
+    joints_by_child = {}
+    for joint in root.findall("joint"):
+        child = joint.find("child")
+        if child is not None and child.get("link"):
+            joints_by_child[child.get("link")] = joint
+
+    chain = []
+    link = ee_link
+    while link != base_link and link in joints_by_child:
+        joint = joints_by_child[link]
+        chain.append(joint)
+        parent = joint.find("parent")
+        if parent is None or not parent.get("link"):
+            break
+        link = parent.get("link")
+
+    chain.reverse()
+    joint_names = []
+    joint_limits: dict[str, tuple[float, float]] = {}
+    for joint in chain:
+        j_type = (joint.get("type") or "").lower()
+        if j_type not in ("revolute", "prismatic", "continuous"):
+            continue
+
+        j_name = joint.get("name")
+        if not j_name:
+            continue
+
+        if j_type == "continuous":
+            lo, hi = -math.pi, math.pi
+        else:
+            lim = joint.find("limit")
+            if lim is None:
+                continue
+            lo = float(lim.get("lower", "0.0"))
+            hi = float(lim.get("upper", "0.0"))
+
+        joint_names.append(j_name)
+        joint_limits[j_name] = (lo, hi)
+
+    if len(joint_names) < 3:
+        return DEFAULT_JOINT_NAMES, DEFAULT_JOINT_LIMITS.copy(), urdf_path
+    return joint_names, joint_limits, urdf_path
 
 
 def height_color(z: float, z_min: float, z_max: float) -> ColorRGBA:
@@ -71,6 +142,7 @@ class WorkspaceViz(Node):
         super().__init__("workspace_viz")
         self.n_samples  = n_samples
         self.point_size = point_size
+        self.joint_names, self.joint_limits, self.urdf_path = load_chain_joint_limits_from_urdf(BASE_FRAME, EE_LINK)
 
         self.cloud_pub  = self.create_publisher(MarkerArray, "/workspace_cloud", 1)
         self.ee_pub     = self.create_publisher(MarkerArray, "/workspace_ee_pos", 1)
@@ -148,7 +220,7 @@ class WorkspaceViz(Node):
             req.header.frame_id = WORLD_FRAME
             req.fk_link_names = [EE_LINK]
             rs = RobotState()
-            rs.joint_state.name = JOINT_NAMES
+            rs.joint_state.name = self.joint_names
             rs.joint_state.position = cfg
             req.robot_state = rs
 
@@ -244,6 +316,8 @@ class WorkspaceViz(Node):
         print(f"  Samples: {self.n_samples}")
         print(f"  Point size: {self.point_size*100:.1f} cm")
         print(f"  EE link: {EE_LINK}")
+        print(f"  URDF: {self.urdf_path or 'fallback defaults'}")
+        print(f"  Chain joints: {', '.join(self.joint_names)}")
         print()
         print("  RVIZ SETUP:")
         print("    1. Add > By Topic > /workspace_cloud > MarkerArray")
@@ -263,7 +337,7 @@ class WorkspaceViz(Node):
         # Sample FK
         np.random.seed(0)
         configs = [
-            [np.random.uniform(lo, hi) for lo, hi in JOINT_LIMITS.values()]
+            [np.random.uniform(*self.joint_limits[jn]) for jn in self.joint_names]
             for _ in range(self.n_samples)
         ]
         positions = self.compute_fk_batch(configs)
