@@ -28,7 +28,7 @@ class WSROS2Bridge(Node):
         self.mission_pub  = self.create_publisher(String,             '/mission_cmd',                   10)
         self.drilling_pub = self.create_publisher(String,             '/drilling/command_to_actuators',  10)
         self.cmd_vel_pub  = self.create_publisher(Twist,              '/cmd_vel',                       10)
-
+        self.lock_orientation_pub = self.create_publisher(String, '/lock_orientation', 10)
         # ---------------- ROS2 Subscribers ----------------
 
         # Supervisor
@@ -130,6 +130,10 @@ class WSROS2Bridge(Node):
                 twist.angular.y = float(angular.get("y", 0.0))
                 twist.angular.z = float(angular.get("z", 0.0))
                 self.cmd_vel_pub.publish(twist)
+            elif msg_type == "lock_orientation":
+                out = String()
+                out.data = msg.get("data", "OFF")
+                self.lock_orientation_pub.publish(out)
 
         except Exception as e:
             self.get_logger().error(f"Failed to handle WS message: {e}")

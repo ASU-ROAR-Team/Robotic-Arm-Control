@@ -7,7 +7,8 @@
             this.container = container;
             this.openmct   = openmct;
             this.wsUrl     = wsUrl;
-
+            this.orientationLocked = false;
+            this.lockPublisher     = null;
             this.mode = "FK";
 
             this.jointNames = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'];
@@ -162,6 +163,7 @@
                 <div class="preset-buttons">
                     <button class="preset-button" id="homeBtn">Home Position</button>
                     <button class="preset-button" id="restBtn">Rest Position</button>
+                    <button class="preset-button" id="lockOrientationBtn">Lock Orientation: OFF</button>
                 </div>
             </div>
             `;
@@ -237,6 +239,19 @@
             // Preset buttons
             this.container.querySelector('#homeBtn').onclick = () => this.applyPreset('home');
             this.container.querySelector('#restBtn').onclick = () => this.applyPreset('rest');
+
+            // Lock Orientation Toggle
+            this.container.querySelector('#lockOrientationBtn').onclick = () => {
+                this.orientationLocked = !this.orientationLocked;
+
+                const btn = this.container.querySelector('#lockOrientationBtn');
+                const state = this.orientationLocked ? "ON" : "OFF";
+
+                btn.innerText = `Lock Orientation: ${state}`;
+
+                this.publishLockState(state);
+                this.sendWSLockState(state);
+                };
         }
 
         // ─── Presets ────────────────────────────────────────────────────────
@@ -295,6 +310,11 @@
                 name: '/ik_target_pose',
                 messageType: 'std_msgs/Float64MultiArray'
             });
+            this.lockPublisher = new ROSLIB.Topic({
+            ros: this.ros,
+            name: '/lock_orientation',
+            messageType: 'std_msgs/String'
+                });
         }
 
         publishJointStates() {
@@ -307,6 +327,30 @@
             if (!this.posePublisher) return;
             this.posePublisher.publish({ data: Object.values(this.ikValues) });
         }
+        publishLockState(state) {
+        if (!this.lockPublisher) return;
+
+        this.lockPublisher.publish({
+            data: state
+        });
+        
+
+        console.log("[ArmControlView] Lock Orientation:", state);
+    }
+    sendWSLockState(state) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        console.warn("[ArmControlView] WS not connected");
+        return;
+    }
+
+    const message = {
+        type: "lock_orientation",
+        data: state
+    };
+
+    console.log("[ArmControlView] Sending WS:", message);
+    this.ws.send(JSON.stringify(message));
+}
 
         // ─── Destroy ────────────────────────────────────────────────────────
 
