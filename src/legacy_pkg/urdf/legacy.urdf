@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="legacy_pkg">
+
+  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+  <material name="light_grey"><color rgba="0.7 0.7 0.7 1"/></material>
+
+  <link name="world"/>
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/><child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <inertial>
+      <origin xyz="4.9960036108132E-16 1.14491749414469E-15 0.0535613956407754" rpy="0 0 0" />
+      <mass value="1.15555347830253" />
+      <inertia ixx="0.00564" ixy="0" ixz="0" iyy="0.00564" iyz="0" izz="0.00783" />
+    </inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/base_link.STL" /></geometry><material name="black"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/base_link.STL" /></geometry></collision>
+  </link>
+
+  <link name="Link_1">
+    <inertial>
+      <origin xyz="0.0196425023341312 -0.00104959271552872 0.0656443813689512" rpy="0 0 0" />
+      <mass value="0.608452090334793" /><inertia ixx="0.00095" ixy="8.8E-06" ixz="2.7E-05" iyy="0.00119" iyz="4.1E-06" izz="0.00137" />
+    </inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Link_1.STL" /></geometry><material name="light_grey"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Link_1.STL" /></geometry></collision>
+  </link>
+  <joint name="Joint_1" type="revolute">
+    <origin xyz="0 0 0.122" rpy="0 0 0" /><parent link="base_link" /><child link="Link_1" /><axis xyz="0 0 1" />
+    <limit lower="-0.017" upper="3.159" effort="150.0" velocity="1.0" />
+    <dynamics damping="1.5" friction="1.0"/>
+  </joint>
+
+  <link name="Link_2">
+    <inertial>
+      <origin xyz="0.354361236061949 0.19455847062407 -0.0432395729024948" rpy="0 0 0" />
+      <mass value="0.497896346542447" /><inertia ixx="0.00076" ixy="-0.0005" ixz="2.9E-05" iyy="0.00141" iyz="1.1E-05" izz="0.0016" />
+    </inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Link_2.STL" /></geometry><material name="light_grey"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Link_2.STL" /></geometry></collision>
+  </link>
+  <joint name="Joint_2" type="revolute">
+    <origin xyz="-0.036133331113001 0.00118601468703684 0.1530586337599" rpy="1.5707963267949 0 -0.032725637613237" />
+    <parent link="Link_1" /><child link="Link_2" /><axis xyz="0 0 -1" />
+    <limit lower="-3.5" upper="0.017" effort="300.0" velocity="1.0" />
+    <dynamics damping="3.0" friction="2.0"/>
+  </joint>
+
+  <link name="Link_3">
+    <inertial>
+      <origin xyz="0.000636310315262213 0.0189159957999437 0.00970618985093467" rpy="0 0 0" />
+      <mass value="0.813067644941304" /><inertia ixx="0.00128" ixy="-4.1E-07" ixz="-4.4E-06" iyy="0.00122" iyz="-2.0E-05" izz="0.00152" />
+    </inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Link_3.STL" /></geometry><material name="black"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Link_3.STL" /></geometry></collision>
+  </link>
+  <joint name="Joint_3" type="revolute">
+    <origin xyz="0.46477233991376 0.251598125455598 -0.158400697540068" rpy="3.11060343559603 -0.0171149317961304 0.00154520263816538" />
+    <parent link="Link_2" /><child link="Link_3" /><axis xyz="0 0 -1" />
+    <limit lower="-0.017" upper="3.159" effort="200.0" velocity="1.0" />
+    <dynamics damping="2.0" friction="1.5"/>
+  </joint>
+
+  <link name="Link_4">
+    <inertial>
+      <origin xyz="-0.00841197038063141 -0.000161880434022071 -0.00469047255587729" rpy="0 0 0" />
+      <mass value="0.638395687976236" /><inertia ixx="0.00088" ixy="1.4E-06" ixz="1.4E-05" iyy="0.00085" iyz="-3.9E-06" izz="0.00109" />
+    </inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Link_4.STL" /></geometry><material name="black"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Link_4.STL" /></geometry></collision>
+  </link>
+  <joint name="Joint_4" type="revolute">
+    <origin xyz="0.00193422465986332 0.158595285492459 0.0806070799354807" rpy="-1.5707963267949 -0.0498682123174333 -0.0121953737359868" />
+    <parent link="Link_3" /><child link="Link_4" />
+    <axis xyz="0 0 1" /> <limit lower="-0.017" upper="3.159" effort="80.0" velocity="2.0" />
+  </joint>
+
+  <link name="Link_5">
+    <inertial>
+      <origin xyz="-0.00522938401848849 -0.0194082765628301 0.0213025001251292" rpy="0 0 0" />
+      <mass value="0.456511376776955" /><inertia ixx="0.00057" ixy="2.6E-05" ixz="7.8E-06" iyy="0.00065" iyz="2.7E-05" izz="0.00091" />
+    </inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Link_5.STL" /></geometry><material name="light_grey"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Link_5.STL" /></geometry></collision>
+  </link>
+  <joint name="Joint_5" type="revolute">
+    <origin xyz="-0.0974961314222137 -0.00465257036148067 0.0731070799341241" rpy="1.5707963267949 -0.250189199838187 -1.52311193748308" />
+    <parent link="Link_4" /><child link="Link_5" /><axis xyz="0 0 -1" />
+    <limit lower="-0.017" upper="3.159" effort="80.0" velocity="2.0" />
+  </joint>
+
+  <link name="Servo_Gear">
+    <inertial><mass value="0.05"/><inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/></inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Servo_Gear.STL" /></geometry><material name="light_grey"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Servo_Gear.STL" /></geometry></collision>
+  </link>
+  <joint name="Servo_Gear_Joint" type="revolute">
+    <origin xyz="-0.0262574229609702 0.0173435281393812 0.0555000000000031" rpy="1.57079632679488 1.52345600277097 -0.277058128904501" />
+    <parent link="Link_5" /><child link="Servo_Gear" /><axis xyz="0 0 1" /><limit lower="-1.5" upper="1.5" effort="40.0" velocity="2.0" />
+  </joint>
+
+  <link name="Follower_Gear">
+    <inertial><mass value="0.05"/><inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/></inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Follower_Gear.STL" /></geometry><material name="light_grey"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Follower_Gear.STL" /></geometry></collision>
+  </link>
+  <joint name="Follower_Gear_Joint" type="revolute">
+    <origin xyz="0.029895328042482 -0.00455073137108009 0.0554999999998389" rpy="1.57079632679488 1.52345600277097 -0.277058128904509" />
+    <parent link="Link_5" /><child link="Follower_Gear" /><axis xyz="0 0 -1" /><limit lower="-1.5" upper="1.5" effort="40.0" velocity="2.0" />
+  </joint>
+
+  <link name="Left_Gripper">
+    <inertial><mass value="0.1"/><inertia ixx="0.0002" ixy="0" ixz="0" iyy="0.0002" iyz="0" izz="0.0002"/></inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Left_Gripper.STL" /></geometry><material name="black"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Left_Gripper.STL" /></geometry></collision>
+  </link>
+  <joint name="Left_Gripper_Joint" type="revolute">
+    <origin xyz="-0.0599831378951265 -0.00142237643539467 0.00970000392485049" rpy="0 0 0" /><parent link="Servo_Gear" /><child link="Left_Gripper" />
+    <axis xyz="0 0 -1" /><limit lower="-1.5" upper="1.5" effort="40.0" velocity="2.0" />
+  </joint>
+
+  <link name="Right_Gripper">
+    <inertial><mass value="0.1"/><inertia ixx="0.0002" ixy="0" ixz="0" iyy="0.0002" iyz="0" izz="0.0002"/></inertial>
+    <visual><geometry><mesh filename="package://legacy_pkg/meshes/Right_Gripper.STL" /></geometry><material name="black"/></visual>
+    <collision><geometry><mesh filename="package://legacy_pkg/meshes/Right_Gripper.STL" /></geometry></collision>
+  </link>
+  <joint name="Right_Gripper_Joint" type="revolute">
+    <origin xyz="-0.0595800110279714 0.00708676836980149 0.004" rpy="0 0 0" /><parent link="Follower_Gear" /><child link="Right_Gripper" />
+    <axis xyz="0 0 1" /><limit lower="-1.5" upper="1.5" effort="40.0" velocity="2.0" />
+  </joint>
+
+  <gazebo reference="base_link"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_1"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_2"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_3"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_4"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Link_5"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Servo_Gear"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Follower_Gear"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Left_Gripper"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+  <gazebo reference="Right_Gripper"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+
+  <ros2_control name="RobotSystem" type="system">
+    <hardware><plugin>gz_ros2_control/GazeboSimSystem</plugin></hardware>
+    <joint name="Joint_1"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Joint_2"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Joint_3"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Joint_4"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Joint_5"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Servo_Gear_Joint"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Left_Gripper_Joint"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Follower_Gear_Joint"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+    <joint name="Right_Gripper_Joint"><command_interface name="position"/><state_interface name="position"/><state_interface name="velocity"/></joint>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <position_proportional_gain>4</position_proportional_gain>
+      <parameters>package://legacy_moveit/config/ros2_controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+</robot>
