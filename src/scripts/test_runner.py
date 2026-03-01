@@ -22,7 +22,7 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from collision_guard import CollisionGuard
 
-LINK_NAME = "Link_5"
+LINK_NAME = "ee_link"
 GROUP_NAME = "rover_arm"
 FRAME_ID = "world"
 PITCH_JOINT = "Joint_4"

@@ -51,7 +51,7 @@ DEFAULT_JOINT_LIMITS = {
     "Joint_5": (-0.0170,  3.1590),
 }
 DEFAULT_JOINT_NAMES = list(DEFAULT_JOINT_LIMITS.keys())
-EE_LINK     = "Link_5"
+EE_LINK     = "ee_link"
 WORLD_FRAME = "world"
 BASE_FRAME  = "base_link"
 # =====================================================================

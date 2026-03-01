@@ -32,7 +32,7 @@ from tf2_ros.transform_listener import TransformListener
 from collision_guard import CollisionGuard
 import sys, termios, threading
 
-LINK_NAME   = "Link_5"
+LINK_NAME   = "ee_link"
 GROUP_NAME  = "rover_arm"
 FRAME_ID    = "world"
 DEFAULT_CM  = 1.0

@@ -42,7 +42,7 @@ JOINT_LIMITS = {
     "Joint_5": (-0.0170,  3.1590),
 }
 JOINT_NAMES  = list(JOINT_LIMITS.keys())
-EE_LINK      = "Link_5"
+EE_LINK      = "ee_link"
 BASE_FRAME   = "base_link"
 WORLD_FRAME  = "world"
 GROUP_NAME   = "rover_arm"

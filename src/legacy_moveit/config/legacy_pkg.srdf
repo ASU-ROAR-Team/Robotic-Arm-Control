@@ -10,11 +10,7 @@
     <!--CHAINS: When a chain is specified, all the links along the chain (including endpoints) are included in the group. Additionally, all the joints that are parents to included links are also included. This means that joints along the chain and the parent joint of the base link are included in the group-->
     <!--SUBGROUPS: Groups can also be formed by referencing to already defined group names-->
     <group name="arm_controller">
-        <joint name="Joint_1"/>
-        <joint name="Joint_2"/>
-        <joint name="Joint_3"/>
-        <joint name="Joint_5"/>
-        <joint name="Joint_4"/>
+        <chain base_link="base_link" tip_link="ee_link"/>
     </group>
     <group name="hand_controller">
         <joint name="Follower_Gear_Joint"/>
@@ -49,6 +45,7 @@
         <joint name="Right_Gripper_Joint" value="1"/>
         <joint name="Servo_Gear_Joint" value="1"/>
     </group_state>
+    <end_effector name="gripper" parent_link="ee_link" group="hand_controller" parent_group="arm_controller"/>
     <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
     <disable_collisions link1="Follower_Gear" link2="Link_1" reason="Never"/>
     <disable_collisions link1="Follower_Gear" link2="Link_2" reason="Never"/>

@@ -16,7 +16,7 @@ import threading
 # === CONFIGURATION (Updated for New_rover_Arm) ===
 # The tip link of your arm chain (before the gripper)
 # Sourced from your URDF: <link name="Link_5">
-LINK_NAME = "Link_5"  
+LINK_NAME = "ee_link"  
 
 # The MoveIt planning group for the arm joints
 # Sourced from your SRDF: <group name="rover_arm">

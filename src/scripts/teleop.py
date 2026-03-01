@@ -53,7 +53,7 @@ try:
 except Exception:
     get_package_share_directory = None
 
-LINK_NAME   = "Link_5"
+LINK_NAME   = "ee_link"
 GROUP_NAME  = "arm_controller"
 FRAME_ID    = "world"
 BASE_FRAME  = "base_link"
