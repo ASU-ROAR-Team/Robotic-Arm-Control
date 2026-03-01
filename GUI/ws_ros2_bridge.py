@@ -4,11 +4,13 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.time import Time
 from std_msgs.msg import String, Float64MultiArray
 from sensor_msgs.msg import JointState, CompressedImage
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry, Path
 from visualization_msgs.msg import Marker
+from tf2_ros import Buffer, TransformListener, TransformException
 import json
 import asyncio
 import threading
@@ -16,6 +18,8 @@ import base64
 import websockets
 
 PORT = 8080
+FRAME_ID = "world"
+EE_LINK = "Link_5"
 
 
 class WSROS2Bridge(Node):
@@ -29,6 +33,7 @@ class WSROS2Bridge(Node):
         self.drilling_pub = self.create_publisher(String,             '/drilling/command_to_actuators',  10)
         self.cmd_vel_pub  = self.create_publisher(Twist,              '/cmd_vel',                       10)
         self.lock_orientation_pub = self.create_publisher(String, '/lock_orientation', 10)
+        self.teleop_cmd_pub = self.create_publisher(String, '/teleop_command', 10)
         # ---------------- ROS2 Subscribers ----------------
 
         # Supervisor
@@ -59,6 +64,11 @@ class WSROS2Bridge(Node):
 
         # ---------------- Internal ----------------
         self.ws_clients = set()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.last_ee_pose_cm = None
+
+        self.create_timer(0.5, self.broadcast_ik_pose_cb)
 
         # asyncio event loop in a dedicated thread
         self.loop      = asyncio.new_event_loop()
@@ -135,8 +145,64 @@ class WSROS2Bridge(Node):
                 out.data = msg.get("data", "OFF")
                 self.lock_orientation_pub.publish(out)
 
+            elif msg_type == "teleop_cmd":
+                command = String()
+                command.data = str(msg.get("command", "")).strip()
+                if command.data:
+                    self.teleop_cmd_pub.publish(command)
+
+            elif msg_type == "ik_teleop_cmd":
+                dx = float(msg.get("dx", 0.0))
+                dy = float(msg.get("dy", 0.0))
+                dz = float(msg.get("dz", 0.0))
+                rpy = msg.get("rpy", [0.0, 0.0, 0.0])
+
+                current = self.lookup_ee_pose_cm()
+                if current is None:
+                    self.get_logger().warn("IK teleop cmd ignored: current EE pose unavailable")
+                    return
+
+                target_x_cm = current["x"] + dx * 100.0
+                target_y_cm = current["y"] + dy * 100.0
+                target_z_cm = current["z"] + dz * 100.0
+
+                yaw = float(rpy[0]) if len(rpy) > 0 else 0.0
+                pitch = float(rpy[1]) if len(rpy) > 1 else 0.0
+                roll = float(rpy[2]) if len(rpy) > 2 else 0.0
+
+                pose_msg = Float64MultiArray()
+                pose_msg.data = [target_x_cm, target_y_cm, target_z_cm, yaw, pitch, roll]
+                self.pose_pub.publish(pose_msg)
+
         except Exception as e:
             self.get_logger().error(f"Failed to handle WS message: {e}")
+
+    def lookup_ee_pose_cm(self):
+        try:
+            transform = self.tf_buffer.lookup_transform(FRAME_ID, EE_LINK, Time())
+            translation = transform.transform.translation
+            pose = {
+                "x": float(translation.x) * 100.0,
+                "y": float(translation.y) * 100.0,
+                "z": float(translation.z) * 100.0
+            }
+            self.last_ee_pose_cm = pose
+            return pose
+        except TransformException:
+            return self.last_ee_pose_cm
+
+    def broadcast_ik_pose_cb(self):
+        if not self.ws_clients:
+            return
+
+        pose = self.lookup_ee_pose_cm()
+        if pose is None:
+            return
+
+        self.broadcast(json.dumps({
+            "type": "ik_pose",
+            "data": json.dumps(pose)
+        }))
 
     # ── broadcast ────────────────────────────────────────────────────────────
 

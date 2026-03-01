@@ -19,6 +19,7 @@
             };
 
             this.ikValues = { x: 50, y: 0, z: 20, yaw: 0, pitch: 0, roll: 0 };
+            this.teleopDefaultCm = 1.0;
 
             this.fkPresets = {
                 home: { joint1: 0,  joint2: 0,   joint3: 0,  joint4: 0, joint5: 0,  joint6: 0 },
@@ -45,6 +46,85 @@
             this.ikInputs     = {};
         }
 
+        parseTeleopCommand(raw) {
+            const text = String(raw || '').trim().toLowerCase();
+            if (!text) return null;
+
+            const parts = text.split(/\s+/);
+            const cmd = parts[0];
+
+            const map = {
+                w: { x: +1, y: 0, z: 0 },
+                s: { x: -1, y: 0, z: 0 },
+                a: { x: 0, y: +1, z: 0 },
+                d: { x: 0, y: -1, z: 0 },
+                q: { x: 0, y: 0, z: +1 },
+                e: { x: 0, y: 0, z: -1 }
+            };
+
+            if (!map[cmd]) return null;
+
+            const cm = parts.length > 1 ? Number(parts[1]) : this.teleopDefaultCm;
+            if (!Number.isFinite(cm)) return null;
+
+            const meters = cm / 100.0;
+            return {
+                cmd,
+                cm,
+                dx: map[cmd].x * meters,
+                dy: map[cmd].y * meters,
+                dz: map[cmd].z * meters
+            };
+        }
+
+        applyTeleopDelta(dx, dy, dz) {
+            this.ikValues.x += dx * 100.0;
+            this.ikValues.y += dy * 100.0;
+            this.ikValues.z += dz * 100.0;
+
+            this.publishPose();
+            this.sendWSUpdate();
+            this.updateIkPoseReadout();
+        }
+
+        runTeleopCommand(raw) {
+            const parsed = this.parseTeleopCommand(raw);
+            const statusEl = this.container.querySelector('#ikTeleopStatus');
+            if (!parsed) {
+                if (statusEl) {
+                    statusEl.textContent = "Invalid command. Use: w/s/a/d/q/e [cm]";
+                }
+                return;
+            }
+
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                if (statusEl) {
+                    statusEl.textContent = "WebSocket not connected.";
+                }
+                return;
+            }
+
+            const command = `${parsed.cmd} ${parsed.cm}`;
+            this.ws.send(JSON.stringify({
+                type: 'teleop_cmd',
+                command
+            }));
+
+            if (statusEl) {
+                statusEl.textContent =
+                    `Sent '${command}' to /teleop_command`;
+            }
+        }
+
+        updateIkPoseReadout() {
+            const xEl = this.container.querySelector('#ikPoseX');
+            const yEl = this.container.querySelector('#ikPoseY');
+            const zEl = this.container.querySelector('#ikPoseZ');
+            if (xEl) xEl.textContent = `${this.ikValues.x.toFixed(1)} cm`;
+            if (yEl) yEl.textContent = `${this.ikValues.y.toFixed(1)} cm`;
+            if (zEl) zEl.textContent = `${this.ikValues.z.toFixed(1)} cm`;
+        }
+
         // ─── WebSocket ──────────────────────────────────────────────────────
 
         initWS() {
@@ -64,7 +144,16 @@
             this.ws.onmessage = (event) => {
                 try {
                     const msg = JSON.parse(event.data);
-                    // Handle any inbound messages from the bridge if needed
+                    const data = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+
+                    if (msg.type === 'ik_pose' && data) {
+                        if (Number.isFinite(Number(data.x))) this.ikValues.x = Number(data.x);
+                        if (Number.isFinite(Number(data.y))) this.ikValues.y = Number(data.y);
+                        if (Number.isFinite(Number(data.z))) this.ikValues.z = Number(data.z);
+                        this.updateIkPoseReadout();
+                        return;
+                    }
+
                     console.log("[ArmControlView] RX:", msg);
                 } catch (e) {
                     console.error("[ArmControlView] Failed to parse message", e);
@@ -147,15 +236,35 @@
                     </div>
 
                     <div id="ik_container" class="pose-control" style="display:none">
-                        <p>Define the target end-effector pose.</p>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
-                            ${['x','y','z','yaw','pitch','roll'].map(k => `
-                                <div>
-                                    <strong>${k.toUpperCase()}</strong>
-                                    <input type="number" id="${k}_input" value="${this.ikValues[k]}" style="width:70px">
-                                    <span>${['x','y','z'].includes(k) ? 'cm' : '°'}</span>
-                                </div>
-                            `).join('')}
+                        <p>IK Teleop: use teleop-style relative commands (same style as <strong>w 50</strong>).</p>
+                        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+                            <input type="text" id="ikTeleopCommand" placeholder="w 50" style="width:140px;">
+                            <button id="ikTeleopRunBtn" type="button">Run</button>
+                            <span style="font-size:12px;opacity:0.8;">Format: w/s/a/d/q/e [cm]</span>
+                        </div>
+
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+                            <label for="ikStepCm" style="font-size:12px;">Step (cm)</label>
+                            <input type="number" id="ikStepCm" min="0.1" step="0.1" value="${this.teleopDefaultCm}" style="width:80px;">
+                            <button id="ikWBtn" type="button">W +X</button>
+                            <button id="ikSBtn" type="button">S -X</button>
+                            <button id="ikABtn" type="button">A +Y</button>
+                            <button id="ikDBtn" type="button">D -Y</button>
+                            <button id="ikQBtn" type="button">Q +Z</button>
+                            <button id="ikEBtn" type="button">E -Z</button>
+                        </div>
+
+                        <div style="font-size:12px;margin-bottom:6px;">
+                            Current IK target:&nbsp;
+                            X=<span id="ikPoseX">${this.ikValues.x.toFixed(1)} cm</span>,
+                            Y=<span id="ikPoseY">${this.ikValues.y.toFixed(1)} cm</span>,
+                            Z=<span id="ikPoseZ">${this.ikValues.z.toFixed(1)} cm</span>
+                        </div>
+
+                        <div id="ikTeleopStatus" style="font-size:12px;opacity:0.9;min-height:18px;"></div>
+
+                        <div style="font-size:12px;opacity:0.7;">
+                            Orientation fields (yaw/pitch/roll) remain unchanged while using IK teleop moves.
                         </div>
                     </div>
                 </div>
@@ -218,15 +327,45 @@
                 n.oninput = () => handler(n.value);
             });
 
-            // IK inputs
-            ['x','y','z','yaw','pitch','roll'].forEach(k => {
-                const el = this.container.querySelector(`#${k}_input`);
-                this.ikInputs[k] = el;
+            const ikCommandInput = this.container.querySelector('#ikTeleopCommand');
+            const ikRunBtn       = this.container.querySelector('#ikTeleopRunBtn');
+            const ikStepInput    = this.container.querySelector('#ikStepCm');
 
-                el.oninput = () => {
-                    this.ikValues[k] = Number(el.value);
-                    if (this.mode === 'IK') this.publishPose();
-                    this.sendWSUpdate();
+            if (ikStepInput) {
+                ikStepInput.oninput = () => {
+                    const value = Number(ikStepInput.value);
+                    if (Number.isFinite(value) && value > 0) {
+                        this.teleopDefaultCm = value;
+                    }
+                };
+            }
+
+            if (ikRunBtn) {
+                ikRunBtn.onclick = () => this.runTeleopCommand(ikCommandInput ? ikCommandInput.value : '');
+            }
+
+            if (ikCommandInput) {
+                ikCommandInput.onkeydown = (event) => {
+                    if (event.key === 'Enter') {
+                        this.runTeleopCommand(ikCommandInput.value);
+                    }
+                };
+            }
+
+            const stepButtons = [
+                ['#ikWBtn', 'w'],
+                ['#ikSBtn', 's'],
+                ['#ikABtn', 'a'],
+                ['#ikDBtn', 'd'],
+                ['#ikQBtn', 'q'],
+                ['#ikEBtn', 'e']
+            ];
+
+            stepButtons.forEach(([selector, cmd]) => {
+                const button = this.container.querySelector(selector);
+                if (!button) return;
+                button.onclick = () => {
+                    this.runTeleopCommand(`${cmd} ${this.teleopDefaultCm}`);
                 };
             });
 
@@ -239,6 +378,8 @@
             // Preset buttons
             this.container.querySelector('#homeBtn').onclick = () => this.applyPreset('home');
             this.container.querySelector('#restBtn').onclick = () => this.applyPreset('rest');
+
+            this.updateIkPoseReadout();
 
             // Lock Orientation Toggle
             this.container.querySelector('#lockOrientationBtn').onclick = () => {
