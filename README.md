@@ -36,6 +36,19 @@ source install/setup.bash
 ros2 launch rover_moveit complete.launch.py
 ```
 
+Unified launcher script:
+
+```bash
+cd /home/ahmed/New_ROAR_Arm
+./workspace_scripts/ros_stack_manager.sh
+```
+
+That script can kill stale ROS/Gazebo/RViz processes, install dependencies, rebuild the workspace, and launch the rover stack. To also start an operator script after the stack is up:
+
+```bash
+./workspace_scripts/ros_stack_manager.sh --script teleop.py
+```
+
 ---
 
 ## rover_scripts overview
