@@ -1,669 +1,607 @@
 #!/usr/bin/env python3
 """
-teleop.py — Full teleop: world-frame XYZ + joint-space rotation + orientation lock
------------------------------------------------------------------------------------
-kinematics.yaml: KDL, position_only_ik: true  (unchanged)
+teleop.py — GUI teleop for 6DOF pose control with gripper control.
 
-HOW ROTATION WORKS:
-    Rotation commands are joint-space and intuitive:
-                rz/rz- -> joint_0 (base yaw)
-                ry/ry- -> joint_1 (shoulder pitch)
-                rx/rx- -> joint_2 (elbow pitch)
-    This gives direct "human-style" control of joints 1-3.
-
-ORIENTATION LOCK:
-    Locks joint_4 (pitch) + joint_5 (twist) as joint constraints.
-  Automatically applied to every move command while locked.
-
-COMMANDS:
-  XYZ (cm):       w/s/a/d/q/e [cm]
-  Rotation (deg): rz/rz-/ry/ry-/rx/rx- [deg]
-    Home:           h   go to saved HOME pose
-  Lock:           c   lock current J4+J5
-  Unlock:         u
-  Info:           p   print joints + lock status
-  Quit:           x
+Features:
+- World-frame XYZ jogging
+- Optional fixed-orientation pose solving
+- Orientation presets and editable RPY targets
+- Single-slider gripper control with open/close shortcuts
+- No joint locking; orientation is enforced through full pose IK
 """
 
+import argparse
+import math
+import threading
+from queue import Empty, Queue
+import tkinter as tk
+from tkinter import scrolledtext
+
 import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
 from builtin_interfaces.msg import Duration as BuiltinDuration
 from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import MoveGroup
-from moveit_msgs.msg import Constraints, PositionConstraint, JointConstraint
-from shape_msgs.msg import SolidPrimitive
+from moveit_msgs.msg import Constraints, JointConstraint, OrientationConstraint, PositionConstraint
+from rclpy.action import ActionClient
+from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
+from shape_msgs.msg import SolidPrimitive
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from std_msgs.msg import String
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 from trajectory_msgs.msg import JointTrajectoryPoint
-from collision_guard import CollisionGuard
-import sys, termios, threading, math
-import json
-import os
-import subprocess
-import xml.etree.ElementTree as ET
 
-try:
-    from ament_index_python.packages import get_package_share_directory
-except Exception:
-    get_package_share_directory = None
-
-LINK_NAME   = "link_6"
-GROUP_NAME  = "arm_controller"
-FRAME_ID    = "world"
-BASE_FRAME  = "base_link"
-DEFAULT_CM  = 1.0
-DEFAULT_DEG = 10.0
-PITCH_JOINT = "joint_4"
-TWIST_JOINT = "joint_5"
-LOCK_TOL    = 0.05
-ROT_JOINT_TOL = 0.03
+LINK_NAME = "link_6"
+GROUP_NAME = "arm_controller"
+FRAME_ID = "world"
+BASE_FRAME = "base_link"
 HAND_CONTROLLER = "/hand_controller_controller/follow_joint_trajectory"
-GRIPPER_OPEN = 0.015
-GRIPPER_CLOSED = 0.0
-
-JOINT_LIMITS = {
-    "joint_0": (-0.0170,  3.1590),
-    "joint_1": (-2.6350,  0.0170),
-    "joint_2": (-0.0170,  3.1590),
-    "joint_3": (-1.6581,  1.6581),
-    "joint_4": (-1.6581,  1.6581),
-    "joint_5": (-1.6581,  1.6581),
-}
-
-# Safe HOME pose within rover URDF/SRDF bounds (degrees -> radians)
+DEFAULT_CM = 1.0
+POSITION_TOL = 0.01
+ORIENTATION_TOL = 0.20
+DISPLAY_JOINTS = ["joint_0", "joint_1", "joint_2", "joint_3", "joint_4", "joint_5"]
 HOME_JOINTS = {
-    "joint_0": math.radians(0.0),
-    "joint_1": math.radians(0.0),
-    "joint_2": math.radians(0.0),
-    "joint_3": math.radians(0.0),
-    "joint_4": math.radians(0.0),
-    "joint_5": math.radians(0.0),
+    "joint_0": 0.0,
+    "joint_1": 0.0,
+    "joint_2": 0.0,
+    "joint_3": 0.0,
+    "joint_4": 0.0,
+    "joint_5": 0.0,
 }
-ARM_JOINTS = ["joint_0", "joint_1", "joint_2", "joint_3", "joint_4", "joint_5"]
-
-DIRECTION_MAP = {
-    "w": (+1,  0,  0), "s": (-1,  0,  0),
-    "a": ( 0, +1,  0), "d": ( 0, -1,  0),
-    "q": ( 0,  0, +1), "e": ( 0,  0, -1),
+GRIPPER_MIN = 0.0
+GRIPPER_MAX = 0.07
+GRIPPER_OPEN_BUTTON = 0.0
+GRIPPER_CLOSE_BUTTON = 0.07
+GRIPPER_TRAJECTORY_SECONDS = 0.35
+ORIENTATION_PRESETS_DEG = {
+    "Look Forward": (180.0, 0.0, 0.0),
+    "Look Down": (173.0, 0.3, -90.0),
+    "Look Up": (7.0, -0.3, -90.0),
+    "Look Right": (179.0, -2.0, -90.0),
+    "Look Left": (179.0, 2.0, 90.0),
 }
-AXIS_LABEL = {
-    "w": "+X fwd", "s": "-X back",
-    "a": "+Y left", "d": "-Y right",
-    "q": "+Z up",   "e": "-Z down",
-}
-ROT_CMDS = {
-    "rz":  ("z", +1, "joint_0 + (base yaw)"),
-    "rz-": ("z", -1, "joint_0 - (base yaw)"),
-    "ry":  ("y", +1, "joint_1 + (shoulder)"),
-    "ry-": ("y", -1, "joint_1 - (shoulder)"),
-    "rx":  ("x", +1, "joint_2 + (elbow)"),
-    "rx-": ("x", -1, "joint_2 - (elbow)"),
-}
-ROT_AXIS_TO_JOINT = {"z": "joint_0", "y": "joint_1", "x": "joint_2"}
-
-msg = f"""
-┌────────────────────────────────────────────────────────┐
-│                  ROVER Full Teleop                     │
-│  World-frame XYZ + Joint Rotation + Orientation Lock   │
-├────────────────────────────────────────────────────────┤
-│  XYZ (world frame, cm):                                │
-│    w/s → world X   a/d → world Y   q/e → world Z       │
-│    "w 5" = 5cm,  no number = {DEFAULT_CM:.0f}cm default│
-│                                                        │
-│  ROTATION (joint-space, human-style):                  │
-│    rz  / rz-  → joint_0 yaw + / -                      │
-│    ry  / ry-  → joint_1 shoulder + / -                 │
-│    rx  / rx-  → joint_2 elbow + / -                    │
-│    "rz 10" = move that joint by 10°                    │
-│                                                        │
-│  ORIENTATION LOCK (joint_4 pitch + joint_5 twist):     │
-│    c  → lock current orientation                       │
-│    u  → unlock                                         │
-│                                                        │
-│  HOME MACRO:                                           │
-│    h  → move to saved HOME joint pose                  │
-│                                                        │
-│  GRIPPER:                                              │
-│    o  → open gripper                                   │
-│    k  → close gripper                                  │
-│                                                        │
-│    p  → print joints + lock status + EE position       │
-│    x  → quit                                           │
-└────────────────────────────────────────────────────────┘
-"""
 
 
-def _resolve_urdf_path() -> str | None:
-    if get_package_share_directory is not None:
-        try:
-                return os.path.join(get_package_share_directory("sixdof_pkg"), "urdf", "roar.urdf")
-        except Exception:
-            pass
-            return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sixdof_pkg", "urdf", "roar.urdf"))
+def quat_from_euler(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
+    cr = math.cos(roll * 0.5)
+    sr = math.sin(roll * 0.5)
+    cp = math.cos(pitch * 0.5)
+    sp = math.sin(pitch * 0.5)
+    cy = math.cos(yaw * 0.5)
+    sy = math.sin(yaw * 0.5)
+    qw = cr * cp * cy + sr * sp * sy
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    return qx, qy, qz, qw
 
 
-def _load_arm_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list[str], dict[str, tuple[float, float]]]:
-    urdf_path = _resolve_urdf_path()
-    if not urdf_path or not os.path.exists(urdf_path):
-        return ARM_JOINTS, JOINT_LIMITS.copy()
+def euler_from_quat(qx: float, qy: float, qz: float, qw: float) -> tuple[float, float, float]:
+    sinr_cosp = 2.0 * (qw * qx + qy * qz)
+    cosr_cosp = 1.0 - 2.0 * (qx * qx + qy * qy)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
 
-    try:
-        xml_text = subprocess.check_output(
-            [
-                "xacro",
-                urdf_path,
-                "robot_name:=roar",
-                "use_gazebo:=false",
-                "use_sim_ros2_control:=false",
-            ],
-            text=True,
-        )
-        root = ET.fromstring(xml_text)
-    except Exception:
-        return ARM_JOINTS, JOINT_LIMITS.copy()
+    sinp = 2.0 * (qw * qy - qz * qx)
+    if abs(sinp) >= 1.0:
+        pitch = math.copysign(math.pi / 2.0, sinp)
+    else:
+        pitch = math.asin(sinp)
 
-    joints_by_child = {}
-    for joint in root.findall("joint"):
-        child = joint.find("child")
-        if child is not None and child.get("link"):
-            joints_by_child[child.get("link")] = joint
+    siny_cosp = 2.0 * (qw * qz + qx * qy)
+    cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+    return roll, pitch, yaw
 
-    chain = []
-    link = ee_link
-    while link != base_link and link in joints_by_child:
-        joint = joints_by_child[link]
-        chain.append(joint)
-        parent = joint.find("parent")
-        if parent is None or not parent.get("link"):
-            break
-        link = parent.get("link")
 
-    chain.reverse()
-    joint_names = []
-    limits: dict[str, tuple[float, float]] = {}
-    for joint in chain:
-        j_type = (joint.get("type") or "").lower()
-        if j_type not in ("revolute", "prismatic", "continuous"):
-            continue
-
-        j_name = joint.get("name")
-        if not j_name:
-            continue
-
-        if j_type == "continuous":
-            lo, hi = -math.pi, math.pi
-        else:
-            lim = joint.find("limit")
-            if lim is None:
-                continue
-            lo = float(lim.get("lower", "0.0"))
-            hi = float(lim.get("upper", "0.0"))
-
-        joint_names.append(j_name)
-        limits[j_name] = (lo, hi)
-
-    if len(joint_names) < 3:
-        return ARM_JOINTS, JOINT_LIMITS.copy()
-    return joint_names, limits
+def joint_constraint(joint_name: str, position: float, tolerance: float) -> JointConstraint:
+    constraint = JointConstraint()
+    constraint.joint_name = joint_name
+    constraint.position = position
+    constraint.tolerance_above = tolerance
+    constraint.tolerance_below = tolerance
+    constraint.weight = 1.0
+    return constraint
 
 
 class Teleop(Node):
-    def __init__(self):
-        super().__init__("rover_teleop")
+    def __init__(self, log_callback=None):
+        super().__init__("sixdof_pose_teleop")
         self._client = ActionClient(self, MoveGroup, "move_action")
         self._hand_client = ActionClient(self, FollowJointTrajectory, HAND_CONTROLLER)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.done = threading.Event()
         self.done.set()
+        self.hand_done = threading.Event()
+        self.hand_done.set()
         self.joints: dict[str, float] = {}
-        self.arm_joint_names, self.joint_limits = _load_arm_joint_limits_from_urdf(BASE_FRAME, LINK_NAME)
-        self.home_joints = {
-            jn: max(self.joint_limits[jn][0], min(self.joint_limits[jn][1], HOME_JOINTS.get(jn, 0.0)))
-            for jn in self.arm_joint_names
-        }
+        self.log_callback = log_callback
+        self.maintain_orientation = True
+        self.target_orientation = quat_from_euler(0.0, 0.0, 0.0)
+        self.target_orientation_rpy_deg = [0.0, 0.0, 0.0]
         self.create_subscription(JointState, "joint_states", self._js, 10)
-        self.create_subscription(String, "/teleop_command", self._teleop_cmd_cb, 10)
-        self.create_subscription(String, "/lock_orientation", self._lock_cmd_cb, 10)
-        self.create_subscription(Float64MultiArray, "/ik_target_pose", self._ik_target_cb, 10)
-        self.locked = False
-        self.locked_pitch = 0.0
-        self.locked_twist = 0.0
-        lock_qos = QoSProfile(
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1,
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-        )
-        self.lock_pub = self.create_publisher(String, "/rover/orientation_lock", lock_qos)
-        self.collision_guard = CollisionGuard(self, GROUP_NAME)
-        self.get_logger().info(
-            f"Using group='{GROUP_NAME}', joints={self.arm_joint_names}, urdf_limits_loaded={bool(self.arm_joint_names)}"
-        )
-        self.get_logger().info("Listening: /teleop_command, /lock_orientation, /ik_target_pose")
-        self._publish_lock_state()
 
-    def _teleop_cmd_cb(self, msg: String):
-        line = (msg.data or "").strip()
-        if not line:
-            return
-        parsed = parse(line)
-        if parsed is None:
-            return
-        self._execute(parsed, source="ros")
-
-    def _lock_cmd_cb(self, msg: String):
-        text = (msg.data or "").strip().lower()
-        if text in ("true", "1", "lock", "locked", "on"):
-            self.lock()
-        elif text in ("false", "0", "unlock", "unlocked", "off"):
-            self.unlock()
-
-    def _ik_target_cb(self, msg: Float64MultiArray):
-        data = list(msg.data)
-        if len(data) < 3:
-            self.get_logger().warn("/ik_target_pose requires at least [x,y,z]")
-            return
-
-        x_raw, y_raw, z_raw = float(data[0]), float(data[1]), float(data[2])
-        max_abs = max(abs(x_raw), abs(y_raw), abs(z_raw))
-        if max_abs > 3.0:
-            x, y, z = x_raw / 100.0, y_raw / 100.0, z_raw / 100.0
-            unit = "cm"
+    def _log(self, level, text):
+        logger = self.get_logger()
+        if level == "error":
+            logger.error(text)
+        elif level == "warn":
+            logger.warning(text)
         else:
-            x, y, z = x_raw, y_raw, z_raw
-            unit = "m"
-
-        if not self.done.is_set():
-            self.get_logger().warn("IK target ignored: still executing previous command.")
-            return
-
-        self.get_logger().info(
-            f"IK target ({unit}) -> world x={x:.3f}, y={y:.3f}, z={z:.3f}"
-            + ("  [LOCKED]" if self.locked else "")
-        )
-        self.move_xyz_absolute(x, y, z)
-
-    def _publish_lock_state(self):
-        msg = String()
-        msg.data = json.dumps({
-            "locked": self.locked,
-            "joint_4": float(self.locked_pitch),
-            "joint_5": float(self.locked_twist),
-        })
-        self.lock_pub.publish(msg)
+            logger.info(text)
+        if self.log_callback is not None:
+            self.log_callback(level, text)
 
     def _js(self, msg):
-        for n, p in zip(msg.name, msg.position):
-            self.joints[n] = p
+        for name, position in zip(msg.name, msg.position):
+            self.joints[name] = position
 
-    def _tf(self, parent, child):
+    def _tf_transform(self, parent, child):
         try:
-            t = self.tf_buffer.lookup_transform(parent, child,
-                rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
-            return t.transform.translation
-        except Exception as e:
-            self.get_logger().error(f"TF {parent}→{child}: {e}")
+            return self.tf_buffer.lookup_transform(
+                parent,
+                child,
+                rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=1.0),
+            ).transform
+        except Exception as exc:
+            self._log("error", f"TF {parent}->{child}: {exc}")
             return None
 
-    # --- Lock ---
-    def lock(self):
-        missing = [j for j in [PITCH_JOINT, TWIST_JOINT] if j not in self.joints]
-        if missing:
-            self.get_logger().error(f"No joint state for: {missing}")
-            return
-        self.locked_pitch = self.joints[PITCH_JOINT]
-        self.locked_twist = self.joints[TWIST_JOINT]
-        self.locked = True
-        self.get_logger().info(
-            f"LOCKED — {PITCH_JOINT}={math.degrees(self.locked_pitch):.1f}°  "
-            f"{TWIST_JOINT}={math.degrees(self.locked_twist):.1f}°")
-        self._publish_lock_state()
+    def capture_current_orientation(self) -> bool:
+        transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        if transform is None:
+            return False
+        rotation = transform.rotation
+        self.target_orientation = (rotation.x, rotation.y, rotation.z, rotation.w)
+        roll, pitch, yaw = euler_from_quat(rotation.x, rotation.y, rotation.z, rotation.w)
+        self.target_orientation_rpy_deg = [math.degrees(roll), math.degrees(pitch), math.degrees(yaw)]
+        self._log(
+            "info",
+            "Captured current orientation -> "
+            f"roll={self.target_orientation_rpy_deg[0]:.1f} deg, "
+            f"pitch={self.target_orientation_rpy_deg[1]:.1f} deg, "
+            f"yaw={self.target_orientation_rpy_deg[2]:.1f} deg",
+        )
+        return True
 
-    def unlock(self):
-        self.locked = False
-        self.get_logger().info("UNLOCKED")
-        self._publish_lock_state()
+    def set_orientation_from_rpy_deg(self, roll_deg: float, pitch_deg: float, yaw_deg: float):
+        self.target_orientation_rpy_deg = [roll_deg, pitch_deg, yaw_deg]
+        self.target_orientation = quat_from_euler(
+            math.radians(roll_deg),
+            math.radians(pitch_deg),
+            math.radians(yaw_deg),
+        )
+        self._log(
+            "info",
+            f"Orientation target set -> roll={roll_deg:.1f} deg, pitch={pitch_deg:.1f} deg, yaw={yaw_deg:.1f} deg",
+        )
+
+    def set_maintain_orientation(self, enabled: bool):
+        self.maintain_orientation = enabled
+        self._log("info", f"Maintain orientation: {'ON' if enabled else 'OFF'}")
+
+    def status_text(self):
+        mode = "fixed orientation" if self.maintain_orientation else "position only"
+        lines = [f"Mode: {mode}", "Joints:"]
+        for name in DISPLAY_JOINTS:
+            value = self.joints.get(name, float("nan"))
+            lines.append(f"  {name}  {value:+.4f} rad  ({math.degrees(value):+.1f} deg)")
+        for name in ["left_gripper", "right_gripper"]:
+            if name in self.joints:
+                lines.append(f"  {name}  {self.joints[name]:+.4f} m")
+        lines.append(
+            "Target orientation: "
+            f"roll={self.target_orientation_rpy_deg[0]:.1f} deg, "
+            f"pitch={self.target_orientation_rpy_deg[1]:.1f} deg, "
+            f"yaw={self.target_orientation_rpy_deg[2]:.1f} deg"
+        )
+        world_transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        if world_transform is not None:
+            position = world_transform.translation
+            lines.append(f"EE world: x={position.x:.4f} y={position.y:.4f} z={position.z:.4f}")
+            roll, pitch, yaw = euler_from_quat(
+                world_transform.rotation.x,
+                world_transform.rotation.y,
+                world_transform.rotation.z,
+                world_transform.rotation.w,
+            )
+            lines.append(
+                "EE orientation: "
+                f"roll={math.degrees(roll):.1f} deg, pitch={math.degrees(pitch):.1f} deg, yaw={math.degrees(yaw):.1f} deg"
+            )
+        return "\n".join(lines)
 
     def print_status(self):
-        lock_str = (f"LOCKED  J4={math.degrees(self.locked_pitch):.1f}°  "
-                    f"J5={math.degrees(self.locked_twist):.1f}°"
-                    if self.locked else "free")
-        lines = ["", "═══ Status ═══", f"  Lock: {lock_str}", "  Joints:"]
-        for n in self.arm_joint_names:
-            v = self.joints.get(n, float("nan"))
-            lines.append(f"    {n}  {v:+.4f} rad  ({math.degrees(v):+.1f}°)")
-        for n in ["left_gripper", "right_gripper"]:
-            if n in self.joints:
-                v = self.joints[n]
-                lines.append(f"    {n}  {v:+.4f} m")
-        p = self._tf(FRAME_ID, LINK_NAME)
-        if p:
-            lines.append(f"  EE (world): x={p.x:.4f}  y={p.y:.4f}  z={p.z:.4f}")
-        p2 = self._tf(BASE_FRAME, LINK_NAME)
-        if p2:
-            dist = math.sqrt(p2.x**2 + p2.y**2 + p2.z**2)
-            lines.append(f"  EE (base):  x={p2.x:.4f}  y={p2.y:.4f}  z={p2.z:.4f}  dist={dist:.4f}m")
-        lines.append("══════════════")
-        self.get_logger().info("\n".join(lines))
+        self._log("info", self.status_text())
 
-    def _lock_jc(self):
-        if not self.locked:
-            return []
-        out = []
-        for jn, jv in [(PITCH_JOINT, self.locked_pitch), (TWIST_JOINT, self.locked_twist)]:
-            jc = JointConstraint()
-            jc.joint_name = jn
-            jc.position = jv
-            jc.tolerance_above = LOCK_TOL
-            jc.tolerance_below = LOCK_TOL
-            jc.weight = 1.0
-            out.append(jc)
-        return out
-
-    def _joint_constraint(self, joint_name: str, position: float, tol: float = ROT_JOINT_TOL):
-        jc = JointConstraint()
-        jc.joint_name = joint_name
-        jc.position = position
-        jc.tolerance_above = tol
-        jc.tolerance_below = tol
-        jc.weight = 1.0
-        return jc
-
-    def _clamp_joint(self, joint_name: str, value: float):
-        lo, hi = self.joint_limits[joint_name]
-        return max(lo, min(hi, value))
-
-    def _pos_constraint(self, x, y, z, tol=0.01):
-        pc = PositionConstraint()
-        pc.header.frame_id = FRAME_ID
-        pc.link_name = LINK_NAME
-        pc.weight = 1.0
+    def _position_constraint(self, x, y, z, tol=POSITION_TOL):
+        position_constraint = PositionConstraint()
+        position_constraint.header.frame_id = FRAME_ID
+        position_constraint.link_name = LINK_NAME
+        position_constraint.weight = 1.0
         box = SolidPrimitive()
         box.type = SolidPrimitive.BOX
         box.dimensions = [tol, tol, tol]
-        pc.constraint_region.primitives.append(box)
-        tp = PoseStamped()
-        tp.header.frame_id = FRAME_ID
-        tp.pose.position.x = x
-        tp.pose.position.y = y
-        tp.pose.position.z = z
-        tp.pose.orientation.w = 1.0
-        pc.constraint_region.primitive_poses.append(tp.pose)
-        return pc
+        position_constraint.constraint_region.primitives.append(box)
+        target_pose = PoseStamped()
+        target_pose.header.frame_id = FRAME_ID
+        target_pose.pose.position.x = x
+        target_pose.pose.position.y = y
+        target_pose.pose.position.z = z
+        target_pose.pose.orientation.w = 1.0
+        position_constraint.constraint_region.primitive_poses.append(target_pose.pose)
+        return position_constraint
 
-    # --- XYZ move ---
-    def move_xyz(self, dx, dy, dz):
-        if not self.done.is_set():
-            self.get_logger().warn("Still executing.")
-            return
-        self.done.clear()
-        pos = self._tf(FRAME_ID, LINK_NAME)
-        if pos is None:
-            self.done.set()
-            return
-        c = Constraints()
-        c.position_constraints.append(self._pos_constraint(pos.x+dx, pos.y+dy, pos.z+dz))
-        c.joint_constraints.extend(self._lock_jc())
-        self._send(c)
+    def _orientation_constraint(self):
+        qx, qy, qz, qw = self.target_orientation
+        orientation_constraint = OrientationConstraint()
+        orientation_constraint.header.frame_id = FRAME_ID
+        orientation_constraint.link_name = LINK_NAME
+        orientation_constraint.orientation.x = qx
+        orientation_constraint.orientation.y = qy
+        orientation_constraint.orientation.z = qz
+        orientation_constraint.orientation.w = qw
+        orientation_constraint.absolute_x_axis_tolerance = ORIENTATION_TOL
+        orientation_constraint.absolute_y_axis_tolerance = ORIENTATION_TOL
+        orientation_constraint.absolute_z_axis_tolerance = ORIENTATION_TOL
+        orientation_constraint.weight = 1.0
+        return orientation_constraint
 
-    def move_xyz_absolute(self, x, y, z):
+    def move_xyz(self, dx, dy, dz, label):
         if not self.done.is_set():
-            self.get_logger().warn("Still executing.")
+            self._log("warn", "Still executing.")
             return
-        self.done.clear()
-        c = Constraints()
-        c.position_constraints.append(self._pos_constraint(x, y, z))
-        c.joint_constraints.extend(self._lock_jc())
-        self._send(c)
+        transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        if transform is None:
+            return
+        target_x = transform.translation.x + dx
+        target_y = transform.translation.y + dy
+        target_z = transform.translation.z + dz
+        self._log(
+            "info",
+            f"XYZ {math.sqrt(dx ** 2 + dy ** 2 + dz ** 2) * 100.0:.1f}cm {label}"
+            + (" [fixed orientation]" if self.maintain_orientation else " [position only]"),
+        )
+        self._send_pose_goal(target_x, target_y, target_z)
+
+    def apply_orientation_here(self):
+        transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        if transform is None:
+            return
+        self._log("info", "Applying orientation target at current position")
+        self._send_pose_goal(transform.translation.x, transform.translation.y, transform.translation.z)
 
     def go_home(self):
         if not self.done.is_set():
-            self.get_logger().warn("Still executing.")
+            self._log("warn", "Still executing.")
             return
         self.done.clear()
-
-        c = Constraints()
-        for jn in self.arm_joint_names:
-            c.joint_constraints.append(self._joint_constraint(jn, self.home_joints[jn], tol=0.03))
-
-        self.get_logger().info(
-            "HOME -> " + ", ".join(f"{jn}={math.degrees(self.home_joints[jn]):.0f}°" for jn in self.arm_joint_names)
-        )
-        self._send(c)
-
-    # --- Rotation: joint-space control of joints 1-3 ---
-    def rotate_joint_axis(self, axis: str, angle_rad: float):
-        if not self.done.is_set():
-            self.get_logger().warn("Still executing.")
-            return
-        self.done.clear()
-
-        target_joint = ROT_AXIS_TO_JOINT[axis]
-        if any(jn not in self.joints for jn in ["joint_0", "joint_1", "joint_2"]):
-            self.get_logger().error("Missing joint states for joint_0/joint_1/joint_2")
-            self.done.set()
-            return
-
-        target = self._clamp_joint(target_joint, self.joints[target_joint] + angle_rad)
-        if abs(target - self.joints[target_joint]) < 1e-6:
-            self.get_logger().warn(f"{target_joint} already at limit")
-            self.done.set()
-            return
-
-        c = Constraints()
-        for joint_name in ["joint_0", "joint_1", "joint_2"]:
-            position = target if joint_name == target_joint else self.joints[joint_name]
-            c.joint_constraints.append(self._joint_constraint(joint_name, position))
-        c.joint_constraints.extend(self._lock_jc())
-        self.get_logger().info(
-            f"Target {target_joint}: {math.degrees(self.joints[target_joint]):+.1f}° "
-            f"-> {math.degrees(target):+.1f}°"
-        )
-        self._send(c)
+        constraints = Constraints()
+        for joint_name, value in HOME_JOINTS.items():
+            constraints.joint_constraints.append(joint_constraint(joint_name, value, 0.03))
+        self._log("info", "HOME -> all joints to 0 deg")
+        self._send_constraints(constraints)
 
     def set_gripper(self, opening: float):
-        opening = max(GRIPPER_CLOSED, min(GRIPPER_OPEN, opening))
+        opening = max(GRIPPER_MIN, min(GRIPPER_MAX, opening))
+        if not self.hand_done.is_set():
+            self._log("warn", "Gripper still executing.")
+            return
         if not self._hand_client.wait_for_server(timeout_sec=1.0):
-            self.get_logger().error("Hand controller action server unavailable")
+            self._log("error", "Hand controller action server unavailable")
             return
 
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = ["left_gripper", "right_gripper"]
-
         point = JointTrajectoryPoint()
-        point.positions = [opening, opening]
-        point.time_from_start = BuiltinDuration(sec=2, nanosec=0)
+        point.positions = [-opening, opening]
+        point.time_from_start = BuiltinDuration(sec=0, nanosec=int(GRIPPER_TRAJECTORY_SECONDS * 1_000_000_000))
         goal.trajectory.points = [point]
 
-        label = "open" if opening > (GRIPPER_OPEN / 2.0) else "close"
-        self.get_logger().info(f"GRIPPER {label} -> {opening:.4f} m")
-
+        self._log("info", f"Gripper -> left={-opening:.3f} m, right={opening:.3f} m")
+        self.hand_done.clear()
         self._hand_client.send_goal_async(goal).add_done_callback(self._on_hand_goal)
 
     def _on_hand_goal(self, future):
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
-            self.get_logger().warn("Gripper goal rejected.")
+            self._log("warn", "Gripper goal rejected.")
+            self.hand_done.set()
             return
         goal_handle.get_result_async().add_done_callback(self._on_hand_result)
 
     def _on_hand_result(self, future):
         result = future.result()
         if result is None:
-            self.get_logger().warn("Gripper command failed.")
+            self._log("warn", "Gripper command failed.")
+            self.hand_done.set()
             return
-        self.get_logger().info("Gripper command done.")
+        self._log("info", "Gripper command done.")
+        self.hand_done.set()
 
-    def _send(self, c: Constraints):
-        ok, reason = self.collision_guard.check_current_state(self.joints)
-        if not ok:
-            self.get_logger().warn(f"Blocked by collision guard: {reason}")
-            self.done.set()
+    def _send_pose_goal(self, x: float, y: float, z: float):
+        if not self.done.is_set():
+            self._log("warn", "Still executing.")
             return
+        self.done.clear()
+        constraints = Constraints()
+        constraints.position_constraints.append(self._position_constraint(x, y, z))
+        if self.maintain_orientation:
+            constraints.orientation_constraints.append(self._orientation_constraint())
+        self._send_constraints(constraints)
 
+    def _send_constraints(self, constraints: Constraints):
         goal = MoveGroup.Goal()
         goal.request.group_name = GROUP_NAME
-        goal.request.allowed_planning_time = 3.0
+        goal.request.allowed_planning_time = 5.0
         goal.request.num_planning_attempts = 10
         goal.request.max_velocity_scaling_factor = 0.3
         goal.request.max_acceleration_scaling_factor = 0.3
-        goal.request.goal_constraints.append(c)
+        goal.request.goal_constraints.append(constraints)
         self._client.wait_for_server()
         self._client.send_goal_async(goal).add_done_callback(self._on_goal)
 
-    def _on_goal(self, f):
-        gh = f.result()
-        if not gh.accepted:
-            self.get_logger().warn("Goal rejected.")
+    def _on_goal(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self._log("warn", "Goal rejected.")
             self.done.set()
             return
-        gh.get_result_async().add_done_callback(self._on_result)
+        goal_handle.get_result_async().add_done_callback(self._on_result)
 
-    def _on_result(self, f):
-        val = f.result().result.error_code.val
-        self.get_logger().info("Done." if val == 1 else f"Failed (code {val})")
+    def _on_result(self, future):
+        value = future.result().result.error_code.val
+        self._log("info", "Done." if value == 1 else f"Failed (code {value})")
         self.done.set()
 
-    def _execute(self, parsed, source: str = "cli"):
-        if parsed[0] == "quit":
-            self.get_logger().info(f"Quit requested from {source}")
-            rclpy.shutdown()
-        elif parsed[0] == "print":
-            self.print_status()
-        elif parsed[0] == "home":
-            self.go_home()
-        elif parsed[0] == "gripper":
-            self.set_gripper(parsed[1])
-        elif parsed[0] == "lock":
-            self.lock()
-        elif parsed[0] == "unlock":
-            self.unlock()
-        elif parsed[0] == "xyz":
-            _, dx, dy, dz, cmd = parsed
-            cm = (dx**2 + dy**2 + dz**2) ** 0.5 * 100
-            self.get_logger().info(
-                f"XYZ {cm:.1f}cm world {AXIS_LABEL[cmd]}"
-                + ("  [LOCKED]" if self.locked else "")
-            )
-            self.move_xyz(dx, dy, dz)
-        elif parsed[0] == "rot":
-            _, axis, angle, desc = parsed
-            self.get_logger().info(
-                f"ROT {desc}  {math.degrees(angle):+.1f}°"
-                + ("  [LOCKED]" if self.locked else "")
-            )
-            self.rotate_joint_axis(axis, angle)
-        elif parsed[0] == "bad":
-            self.get_logger().warn(f"Ignoring invalid {source} command: {parsed[1]}")
 
+class TeleopGui:
+    def __init__(self, root, node):
+        self.root = root
+        self.node = node
+        self.log_queue = Queue()
+        self.xyz_step_var = tk.StringVar(value=str(DEFAULT_CM))
+        self.hold_var = tk.BooleanVar(value=True)
+        self.roll_var = tk.StringVar(value="0.0")
+        self.pitch_var = tk.StringVar(value="0.0")
+        self.yaw_var = tk.StringVar(value="0.0")
+        self.gripper_var = tk.DoubleVar(value=GRIPPER_OPEN_BUTTON)
+        self.mode_var = tk.StringVar(value="Mode: fixed orientation")
+        self.exec_var = tk.StringVar(value="Planner: idle")
+        self.joint_var = tk.StringVar(value="Waiting for joint states...")
 
-def parse(line):
-    parts = line.strip().lower().split()
-    if not parts:
-        return None
-    cmd = parts[0]
-    if cmd == "x": return ("quit",)
-    if cmd == "p": return ("print",)
-    if cmd == "h": return ("home",)
-    if cmd == "o": return ("gripper", GRIPPER_OPEN)
-    if cmd == "k": return ("gripper", GRIPPER_CLOSED)
-    if cmd == "c": return ("lock",)
-    if cmd == "u": return ("unlock",)
-    if cmd in DIRECTION_MAP:
+        self.node.log_callback = self.enqueue_log
+
+        self.root.title("SixDOF Pose Teleop")
+        self.root.geometry("1020x820")
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
+
+        self._build_ui()
+        self.root.after(100, self._drain_logs)
+        self.root.after(250, self._refresh_status)
+
+    def enqueue_log(self, level, text):
+        self.log_queue.put((level, text))
+
+    def _build_ui(self):
+        main = tk.Frame(self.root, padx=12, pady=12)
+        main.pack(fill=tk.BOTH, expand=True)
+
+        header = tk.Label(main, text="SixDOF Pose Teleop", font=("TkDefaultFont", 16, "bold"))
+        header.pack(anchor=tk.W)
+
+        info = tk.Label(
+            main,
+            text="Jog XYZ in world frame. Toggle fixed orientation on or off. Use presets or custom RPY to test full 6DOF pose IK.",
+            justify=tk.LEFT,
+        )
+        info.pack(anchor=tk.W, pady=(4, 10))
+
+        status = tk.Frame(main)
+        status.pack(fill=tk.X, pady=(0, 12))
+        tk.Label(status, textvariable=self.mode_var, width=34, anchor=tk.W).pack(side=tk.LEFT)
+        tk.Label(status, textvariable=self.exec_var, width=18, anchor=tk.W).pack(side=tk.LEFT, padx=(12, 0))
+
+        controls = tk.Frame(main)
+        controls.pack(fill=tk.X)
+
+        xyz = tk.LabelFrame(controls, text="XYZ Move (cm)", padx=10, pady=10)
+        xyz.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+        tk.Label(xyz, text="Step").grid(row=0, column=0, sticky="w")
+        tk.Entry(xyz, textvariable=self.xyz_step_var, width=8).grid(row=0, column=1, sticky="w")
+        tk.Button(xyz, text="+X", width=8, command=lambda: self._move_xyz(+1, 0, 0, "+X forward")).grid(row=1, column=1, pady=4)
+        tk.Button(xyz, text="-X", width=8, command=lambda: self._move_xyz(-1, 0, 0, "-X back")).grid(row=3, column=1, pady=4)
+        tk.Button(xyz, text="+Y", width=8, command=lambda: self._move_xyz(0, +1, 0, "+Y left")).grid(row=2, column=0, padx=4)
+        tk.Button(xyz, text="-Y", width=8, command=lambda: self._move_xyz(0, -1, 0, "-Y right")).grid(row=2, column=2, padx=4)
+        tk.Button(xyz, text="+Z", width=8, command=lambda: self._move_xyz(0, 0, +1, "+Z up")).grid(row=1, column=3, padx=(12, 0))
+        tk.Button(xyz, text="-Z", width=8, command=lambda: self._move_xyz(0, 0, -1, "-Z down")).grid(row=3, column=3, padx=(12, 0))
+
+        orient = tk.LabelFrame(controls, text="Orientation", padx=10, pady=10)
+        orient.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0))
+        tk.Checkbutton(
+            orient,
+            text="Maintain fixed orientation",
+            variable=self.hold_var,
+            command=self._toggle_hold,
+        ).grid(row=0, column=0, columnspan=4, sticky="w")
+        tk.Button(orient, text="Capture Current", width=14, command=self._capture_current).grid(row=1, column=0, pady=4, sticky="w")
+        tk.Button(orient, text="Apply Here", width=14, command=self.node.apply_orientation_here).grid(row=1, column=1, pady=4, sticky="w")
+        tk.Button(orient, text="Look Forward", width=14, command=lambda: self._apply_preset("Look Forward")).grid(row=2, column=0, pady=4, sticky="w")
+        tk.Button(orient, text="Look Down", width=14, command=lambda: self._apply_preset("Look Down")).grid(row=2, column=1, pady=4, sticky="w")
+        tk.Button(orient, text="Look Up", width=14, command=lambda: self._apply_preset("Look Up")).grid(row=3, column=0, pady=4, sticky="w")
+        tk.Button(orient, text="Look Right", width=14, command=lambda: self._apply_preset("Look Right")).grid(row=3, column=1, pady=4, sticky="w")
+        tk.Button(orient, text="Look Left", width=14, command=lambda: self._apply_preset("Look Left")).grid(row=4, column=0, pady=4, sticky="w")
+        tk.Button(orient, text="Apply RPY", width=14, command=self._apply_rpy).grid(row=4, column=1, pady=4, sticky="w")
+
+        tk.Label(orient, text="Roll").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        tk.Entry(orient, textvariable=self.roll_var, width=10).grid(row=5, column=1, sticky="w", pady=(8, 0))
+        tk.Label(orient, text="Pitch").grid(row=6, column=0, sticky="w")
+        tk.Entry(orient, textvariable=self.pitch_var, width=10).grid(row=6, column=1, sticky="w")
+        tk.Label(orient, text="Yaw").grid(row=7, column=0, sticky="w")
+        tk.Entry(orient, textvariable=self.yaw_var, width=10).grid(row=7, column=1, sticky="w")
+
+        gripper = tk.LabelFrame(main, text="Gripper", padx=10, pady=10)
+        gripper.pack(fill=tk.X, pady=(12, 12))
+        tk.Scale(
+            gripper,
+            from_=GRIPPER_MIN,
+            to=GRIPPER_MAX,
+            resolution=0.01,
+            orient=tk.HORIZONTAL,
+            length=400,
+            variable=self.gripper_var,
+            label="Opening (m)",
+        ).pack(side=tk.LEFT, padx=(0, 12))
+        buttons = tk.Frame(gripper)
+        buttons.pack(side=tk.LEFT)
+        tk.Button(buttons, text="Apply Slider", width=14, command=self._apply_gripper_slider).pack(pady=2)
+        tk.Button(buttons, text="Open", width=14, command=self._open_gripper).pack(pady=2)
+        tk.Button(buttons, text="Close", width=14, command=self._close_gripper).pack(pady=2)
+
+        actions = tk.LabelFrame(main, text="Actions", padx=10, pady=10)
+        actions.pack(fill=tk.X, pady=(0, 12))
+        tk.Button(actions, text="Home", width=12, command=self.node.go_home).pack(side=tk.LEFT)
+        tk.Button(actions, text="Refresh Status", width=14, command=self.node.print_status).pack(side=tk.LEFT, padx=6)
+        tk.Button(actions, text="Quit", width=12, command=self.close).pack(side=tk.RIGHT)
+
+        joint_frame = tk.LabelFrame(main, text="Current State", padx=10, pady=10)
+        joint_frame.pack(fill=tk.X, pady=(0, 12))
+        tk.Label(joint_frame, textvariable=self.joint_var, justify=tk.LEFT, anchor="w").pack(fill=tk.X)
+
+        log_frame = tk.LabelFrame(main, text="Log", padx=10, pady=10)
+        log_frame.pack(fill=tk.BOTH, expand=True)
+        self.log_box = scrolledtext.ScrolledText(log_frame, height=18, state=tk.DISABLED, wrap=tk.WORD)
+        self.log_box.pack(fill=tk.BOTH, expand=True)
+
+    def _append_log(self, line):
+        self.log_box.configure(state=tk.NORMAL)
+        self.log_box.insert(tk.END, line + "\n")
+        self.log_box.see(tk.END)
+        self.log_box.configure(state=tk.DISABLED)
+
+    def _drain_logs(self):
         try:
-            cm = DEFAULT_CM if len(parts) == 1 else float(parts[1])
-        except ValueError:
-            return ("bad", f"bad distance '{parts[1]}'")
-        m = cm / 100.0
-        sx, sy, sz = DIRECTION_MAP[cmd]
-        return ("xyz", sx*m, sy*m, sz*m, cmd)
-    if cmd in ROT_CMDS:
+            while True:
+                level, text = self.log_queue.get_nowait()
+                self._append_log(f"[{level.upper()}] {text}")
+        except Empty:
+            pass
+        self.root.after(100, self._drain_logs)
+
+    def _refresh_status(self):
+        self.mode_var.set("Mode: fixed orientation" if self.node.maintain_orientation else "Mode: position only")
+        self.exec_var.set("Planner: busy" if not self.node.done.is_set() else "Planner: idle")
+        values = []
+        for name in DISPLAY_JOINTS:
+            if name in self.node.joints:
+                values.append(f"{name}: {math.degrees(self.node.joints[name]):+.1f} deg")
+            else:
+                values.append(f"{name}: n/a")
+        for name in ["left_gripper", "right_gripper"]:
+            if name in self.node.joints:
+                values.append(f"{name}: {self.node.joints[name]:+.3f} m")
+        values.append(
+            "Target RPY: "
+            f"{self.node.target_orientation_rpy_deg[0]:+.1f}, "
+            f"{self.node.target_orientation_rpy_deg[1]:+.1f}, "
+            f"{self.node.target_orientation_rpy_deg[2]:+.1f} deg"
+        )
+        self.joint_var.set("\n".join(values))
+        self.root.after(250, self._refresh_status)
+
+    def _parse_float(self, value, label):
         try:
-            deg = DEFAULT_DEG if len(parts) == 1 else float(parts[1])
+            return float(value)
         except ValueError:
-            return ("bad", f"bad angle '{parts[1]}'")
-        axis, sign, desc = ROT_CMDS[cmd]
-        return ("rot", axis, sign * math.radians(deg), desc)
-    return ("bad", f"unknown '{cmd}'")
+            self.enqueue_log("error", f"Invalid {label}: {value}")
+            return None
+
+    def _move_xyz(self, x_sign, y_sign, z_sign, label):
+        cm = self._parse_float(self.xyz_step_var.get(), "XYZ step")
+        if cm is None:
+            return
+        metres = cm / 100.0
+        self.node.move_xyz(x_sign * metres, y_sign * metres, z_sign * metres, label)
+
+    def _toggle_hold(self):
+        enabled = self.hold_var.get()
+        self.node.set_maintain_orientation(enabled)
+        if enabled and self.node.capture_current_orientation():
+            self.roll_var.set(f"{self.node.target_orientation_rpy_deg[0]:.1f}")
+            self.pitch_var.set(f"{self.node.target_orientation_rpy_deg[1]:.1f}")
+            self.yaw_var.set(f"{self.node.target_orientation_rpy_deg[2]:.1f}")
+
+    def _capture_current(self):
+        if self.node.capture_current_orientation():
+            self.roll_var.set(f"{self.node.target_orientation_rpy_deg[0]:.1f}")
+            self.pitch_var.set(f"{self.node.target_orientation_rpy_deg[1]:.1f}")
+            self.yaw_var.set(f"{self.node.target_orientation_rpy_deg[2]:.1f}")
+            self.enqueue_log("info", "Captured current end-effector orientation into the target fields.")
+
+    def _apply_preset(self, preset_name):
+        roll_deg, pitch_deg, yaw_deg = ORIENTATION_PRESETS_DEG[preset_name]
+        self.roll_var.set(f"{roll_deg:.1f}")
+        self.pitch_var.set(f"{pitch_deg:.1f}")
+        self.yaw_var.set(f"{yaw_deg:.1f}")
+        self.node.set_orientation_from_rpy_deg(roll_deg, pitch_deg, yaw_deg)
+        self.enqueue_log("info", f"Applied preset: {preset_name}")
+
+    def _apply_rpy(self):
+        roll_deg = self._parse_float(self.roll_var.get(), "roll")
+        pitch_deg = self._parse_float(self.pitch_var.get(), "pitch")
+        yaw_deg = self._parse_float(self.yaw_var.get(), "yaw")
+        if None in (roll_deg, pitch_deg, yaw_deg):
+            return
+        self.node.set_orientation_from_rpy_deg(roll_deg, pitch_deg, yaw_deg)
+
+    def _apply_gripper_slider(self):
+        self.node.set_gripper(self.gripper_var.get())
+
+    def _open_gripper(self):
+        self.gripper_var.set(GRIPPER_OPEN_BUTTON)
+        self.node.set_gripper(GRIPPER_OPEN_BUTTON)
+
+    def _close_gripper(self):
+        self.gripper_var.set(GRIPPER_CLOSE_BUTTON)
+        self.node.set_gripper(GRIPPER_CLOSE_BUTTON)
+
+    def close(self):
+        self.root.quit()
 
 
-def run(node: Teleop):
-    settings = termios.tcgetattr(sys.stdin)
-    print(msg)
-    try:
-        while rclpy.ok():
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-            lock_str = (f"LOCKED(J4={math.degrees(node.locked_pitch):.0f}° "
-                        f"J5={math.degrees(node.locked_twist):.0f}°)"
-                        if node.locked else "free")
-            sys.stdout.write(f"[{lock_str}] cmd> ")
-            sys.stdout.flush()
-            try:
-                line = sys.stdin.readline()
-            except EOFError:
-                break
-            if not line:
-                continue
-            r = parse(line)
-            if r is None:
-                continue
-            if r[0] == "quit":
-                print("Exiting..."); rclpy.shutdown(); break
-            elif r[0] == "print":  node.print_status()
-            elif r[0] == "home":   node.go_home()
-            elif r[0] == "gripper": node.set_gripper(r[1])
-            elif r[0] == "lock":   node.lock()
-            elif r[0] == "unlock": node.unlock()
-            elif r[0] == "xyz":
-                _, dx, dy, dz, cmd = r
-                cm = (dx**2+dy**2+dz**2)**0.5 * 100
-                node.get_logger().info(
-                    f"XYZ {cm:.1f}cm world {AXIS_LABEL[cmd]}"
-                    + ("  [LOCKED]" if node.locked else ""))
-                node.move_xyz(dx, dy, dz)
-            elif r[0] == "rot":
-                _, axis, angle, desc = r
-                node.get_logger().info(
-                    f"ROT {desc}  {math.degrees(angle):+.1f}°"
-                    + ("  [LOCKED]" if node.locked else ""))
-                node.rotate_joint_axis(axis, angle)
-            elif r[0] == "bad":
-                print(f"  Error: {r[1]}")
-                print("  Try: h | o | k | w 5 | q 10 | rz 30 | ry- 15 | c | u | p | x")
-    except Exception as e:
-        print(e)
-    finally:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
-
-
-def run_headless(node: Teleop):
-    node.get_logger().info(
-        'No interactive TTY detected. Teleop running in ROS-topic mode only: '
-        '/teleop_command, /ik_target_pose, /lock_orientation.'
-    )
-    rclpy.spin(node)
+def run_headless_check():
+    rclpy.init()
+    node = Teleop()
+    node._log("info", "Headless teleop check passed.")
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--headless-check", action="store_true", help="Initialize the ROS node without starting the GUI")
+    args = parser.parse_args()
+
+    if args.headless_check:
+        run_headless_check()
+        return
+
     rclpy.init()
     node = Teleop()
+    root = tk.Tk()
+    app = TeleopGui(root, node)
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
     try:
-        if sys.stdin.isatty():
-            threading.Thread(target=run, args=(node,), daemon=True).start()
-            rclpy.spin(node)
-        else:
-            run_headless(node)
-    except KeyboardInterrupt:
-        pass
+        app._capture_current()
+        app._append_log("[INFO] 6DOF pose teleop GUI ready.")
+        root.mainloop()
     finally:
+        node.destroy_node()
         rclpy.shutdown()
+        spin_thread.join(timeout=1.0)
+
 
 if __name__ == "__main__":
     main()

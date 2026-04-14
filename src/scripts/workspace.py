@@ -7,16 +7,15 @@ computes FK for each, and publishes the reachable positions as a
 MarkerArray in RViz. Also shows current EE position as a large sphere.
 
 SETUP IN RVIZ:
-  1. Run this script
-  2. In RViz → Add → By topic → /workspace_cloud → MarkerArray
-  3. Also add /workspace_ee_pos → MarkerArray for current EE marker
-  4. Set Fixed Frame to "world"
+    1. Launch through start_complete_stack.py to load the default displays automatically
+    2. If you launch RViz manually, add /workspace_cloud and /workspace_ee_pos as MarkerArray displays
+    3. Set Fixed Frame to "world"
 
 Run while the robot is launched (move_group must be up).
 
 Usage:
   python3 workspace_viz.py
-  python3 workspace_viz.py --samples 3000 --point-size 0.01
+    python3 workspace_viz.py --samples 5000 --point-size 0.01
 """
 
 import rclpy
@@ -30,6 +29,7 @@ from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Point
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 import numpy as np
 import argparse, math, sys, time
 import os
@@ -62,10 +62,10 @@ BASE_FRAME  = "base_link"
 def resolve_urdf_path() -> str | None:
     if get_package_share_directory is not None:
         try:
-                return os.path.join(get_package_share_directory("sixdof_pkg"), "urdf", "roar.urdf")
+            return os.path.join(get_package_share_directory("sixdof_pkg"), "urdf", "roar.urdf")
         except Exception:
             pass
-            return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sixdof_pkg", "urdf", "roar.urdf"))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sixdof_pkg", "urdf", "roar.urdf"))
 
 
 def load_chain_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list[str], dict[str, tuple[float, float]], str | None]:
@@ -156,8 +156,15 @@ class WorkspaceViz(Node):
         self.point_size = point_size
         self.joint_names, self.joint_limits, self.urdf_path = load_chain_joint_limits_from_urdf(BASE_FRAME, EE_LINK)
 
-        self.cloud_pub  = self.create_publisher(MarkerArray, "/workspace_cloud", 1)
-        self.ee_pub     = self.create_publisher(MarkerArray, "/workspace_ee_pos", 1)
+        marker_qos = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+
+        self.cloud_pub  = self.create_publisher(MarkerArray, "/workspace_cloud", marker_qos)
+        self.ee_pub     = self.create_publisher(MarkerArray, "/workspace_ee_pos", marker_qos)
 
         self.tf_buffer   = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -323,7 +330,7 @@ class WorkspaceViz(Node):
 
     def run(self):
         print("\n" + "═"*60)
-        print("  ROVER Arm Workspace Visualizer")
+        print("  SixDOF Arm Workspace Visualizer")
         print("═"*60)
         print(f"  Samples: {self.n_samples}")
         print(f"  Point size: {self.point_size*100:.1f} cm")
@@ -332,9 +339,10 @@ class WorkspaceViz(Node):
         print(f"  Chain joints: {', '.join(self.joint_names)}")
         print()
         print("  RVIZ SETUP:")
-        print("    1. Add > By Topic > /workspace_cloud > MarkerArray")
-        print("    2. Add > By Topic > /workspace_ee_pos > MarkerArray")
-        print("    3. Fixed Frame = 'world'")
+        print("    1. start_complete_stack.py should load both marker displays automatically")
+        print("    2. If you launched RViz manually: Add > By Topic > /workspace_cloud > MarkerArray")
+        print("    3. Add > By Topic > /workspace_ee_pos > MarkerArray")
+        print("    4. Fixed Frame = 'world'")
         print("    Colors: blue=low, green=mid, red=high altitude")
         print("    Yellow sphere = current EE position (updates live)")
         print()
@@ -395,8 +403,8 @@ class WorkspaceViz(Node):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--samples",    type=int,   default=2000,
-                        help="Number of FK samples (default 2000, more=better)")
+    parser.add_argument("--samples",    type=int,   default=4000,
+                        help="Number of FK samples (default 4000, more=better)")
     parser.add_argument("--point-size", type=float, default=0.008,
                         help="Sphere radius in metres (default 0.008 = 8mm)")
     args = parser.parse_args()

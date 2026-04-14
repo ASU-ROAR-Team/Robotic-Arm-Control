@@ -1,80 +1,188 @@
 # Robotic-Arm-Control
 
-This repository contains the ROAR arm MoveIt setup and three teleoperation scripts for the 6DoF workspace.
+This workspace contains the current six degree of freedom arm simulation, MoveIt configuration, GUI pose teleop, workspace visualizer, and the one-shot launcher that starts the full stack cleanly.
 
-## Build & install (single-terminal: RViz + Gazebo)
+## Packages
 
-Open Terminal 1 and run:
+- `sixdof_pkg`: robot URDF, meshes, Gazebo launch
+- `sixdof_moveit`: MoveIt config, RViz config, complete launch
+- `src/scripts/teleop.py`: GUI pose teleop for the arm and gripper
+- `src/scripts/workspace.py`: RViz workspace cloud visualizer
+- `src/scripts/start_complete_stack.py`: clean launcher for the complete stack plus helper scripts
+
+## Build
+
+From the workspace root:
 
 ```bash
-# from repo root
-cd /home/roar/new_arm/Robotic-Arm-Control
+cd /home/roar/6dof_arm/Robotic-Arm-Control
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+source /opt/ros/humble/setup.bash
 colcon build --symlink-install
-source install/setup.bash
-
-# Launch the full MoveIt / simulation stack (RViz & Gazebo)
-ros2 launch ROAR_MoveIT complete.launch.py
 ```
+
+After the build:
+
+```bash
+cd /home/roar/6dof_arm/Robotic-Arm-Control
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+```
+
+## Recommended Launch
+
+The recommended entrypoint is the unified launcher:
+
+```bash
+cd /home/roar/6dof_arm/Robotic-Arm-Control
+python3 src/scripts/start_complete_stack.py
+```
+
+What it does:
+
+- Kills lingering Gazebo, RViz, MoveIt, controller spawner, and helper-script processes
+- Syncs the current RViz config from `src/sixdof_moveit/config/moveit.rviz` into the installed config path
+- Launches `ros2 launch sixdof_moveit complete.launch.py`
+- Starts `src/scripts/teleop.py`
+- Starts `src/scripts/workspace.py`
+
+## Direct Launch Options
+
+Full stack:
+
+```bash
+ros2 launch sixdof_moveit complete.launch.py
+```
+
+Gazebo only:
+
+```bash
+ros2 launch sixdof_pkg gazebo.launch.py
+```
+
+Display / RViz only:
+
+```bash
+ros2 launch sixdof_pkg display.launch.py
+```
+
+## Teleop GUI
+
+Run manually if needed:
+
+```bash
+python3 src/scripts/teleop.py
+```
+
+The teleop GUI is built around full 6DOF pose control.
+
+### What it does
+
+- Moves the end effector in world-frame `+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z`
+- Can solve with `fixed orientation` on or with `position only` mode
+- Does not lock the last joints anymore
+- Uses full pose IK when fixed orientation is enabled
+- Lets you capture the current tool orientation and reuse it as the pose target
+- Lets you apply suggested orientation presets and then jog XYZ while maintaining that orientation
+- Includes gripper controls with one slider plus `Open` and `Close` buttons
+
+### Orientation controls
+
+The GUI includes:
+
+- `Maintain fixed orientation`
+- `Capture Current`
+- `Apply Here`
+- `Look Forward`
+- `Look Down`
+- `Look Up`
+- `Look Right`
+- `Look Left`
+- editable `Roll`, `Pitch`, `Yaw`
+- `Apply RPY`
 
 Notes:
-- If `colcon build` is already done, just `source install/setup.bash` then run the `ros2 launch` line.
-- Use Ctrl+C to stop the launch.
 
-You can also launch the display or Gazebo-only for the package that contains the robot model:
+- The preset buttons are intentionally approximate, not mathematically rigid canonical poses. They are meant to give you useful starting orientations for testing 6DOF fixed-orientation planning.
+- The kinematics config is set to `position_only_ik: false`, so fixed-orientation pose solving is enabled.
+
+### Gripper controls
+
+The GUI includes a single gripper slider that commands both fingers together.
+
+- Slider range: `0.0 m` to `0.07 m`
+- `Open` button uses a buffered near-max opening to avoid pushing exactly to the hard limit
+- `Close` button uses a buffered near-min opening to avoid pushing exactly to the hard limit
+
+The URDF currently uses:
+
+- `right_gripper` upper limit: `0.07`
+- `left_gripper` upper limit: `0.07`
+- mirrored axis directions so both fingers move correctly in Gazebo under the same command
+
+## Workspace Visualizer
+
+Run manually if needed:
 
 ```bash
-ros2 launch ROAR_pkg display.launch.py
-ros2 launch ROAR_pkg gazebo.launch.py
+python3 src/scripts/workspace.py
 ```
 
-## Teleop scripts (Terminal 2)
+Default behavior:
 
-Open Terminal 2, source the workspace, then run any of the scripts:
+- Samples `4000` random valid FK configurations by default
+- Publishes a denser workspace cloud than before
+- Publishes the current end-effector marker live
+
+Topics:
+
+- `/workspace_cloud`
+- `/workspace_ee_pos`
+
+## RViz Defaults
+
+The default RViz config lives at:
+
+- `src/sixdof_moveit/config/moveit.rviz`
+
+It now includes the workspace marker displays by default:
+
+- `Workspace Cloud` from `/workspace_cloud`
+- `Workspace EE` from `/workspace_ee_pos`
+
+So when you launch through `start_complete_stack.py`, those marker topics are enabled automatically in RViz.
+
+## Troubleshooting
+
+### Stale colcon prefix warnings
+
+If you see warnings about missing paths in `AMENT_PREFIX_PATH` or `CMAKE_PREFIX_PATH`, rebuild from a clean ROS environment:
 
 ```bash
-cd /home/roar/new_arm/Robotic-Arm-Control
-source install/setup.bash
-
-# Simple mover (position-only XYZ teleop)
-python3 src/scripts/simple_mover.py
-
-# Wrist-lock teleop (lock pitch + twist joints, then move XYZ)
-python3 src/scripts/wrist_lock_teleop.py
-
-# Macro orientation teleop (save/apply orientation macros + XYZ teleop)
-python3 src/scripts/macro_orientation_teleop.py
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
 ```
 
-### simple_mover.py
-- Purpose: Move the end effector in X/Y/Z by small increments using MoveIt position constraints.
-- Usage:
-	- Single-letter commands: `w` `a` `s` `d` `q` `e` move 1 cm by default along axes.
-	- Provide a distance in cm: `w 5` moves 5 cm forward. Also accepts `w5`.
-	- `x` quits.
+### Gazebo or controller warnings on rerun
 
-### wrist_lock_teleop.py
-- Purpose: Lock `Joint_4` (pitch) and `Joint_5` (twist) to current values, then move XYZ while holding wrist orientation.
-- Usage:
-	- `c` locks the current pitch + twist (reads from `joint_states`).
-	- `u` unlocks wrist (free orientation).
-	- Movement commands same as `simple_mover.py` (`w`, `w 5`, etc.).
-	- `x` quits.
+Use the unified launcher instead of manually rerunning multiple launch files. It clears stale Gazebo and ROS processes before startup.
 
-### macro_orientation_teleop.py
-- Purpose: Save orientation macros (pitch+twist) to slots and lock to them while moving XYZ.
-- Usage:
-	- `save 1` / `save 2` / `save 3` — save current orientation to slot.
-	- `lock 1` / `lock 2` / `lock 3` — lock to a saved slot.
-	- `u` unlocks (free movement).
-	- `p` prints all saved macros.
-	- Movement commands same as above (`w`, `w 5`, etc.).
-	- `x` quits.
+### Fixed-orientation planning fails
 
-## Notes & troubleshooting
-- Ensure TF frames are available (for example `world` and `Link_5`) and `joint_states` are being published.
-- If TF lookup fails, the scripts will log an error and ignore the command.
-- If MoveIt rejects a goal, check the planner/scene and joint limits.
+If fixed-orientation motion cannot be planned for a target:
 
----
-Generated for this workspace; scripts live in `src/scripts` and MoveIt/launch files are in `src/ROAR_MoveIT` and `src/ROAR_pkg`.
+- capture the current orientation first
+- try a nearby preset
+- slightly relax the requested pose by changing XYZ step size
+- temporarily switch `Maintain fixed orientation` off to verify the position is reachable
 
+### RViz does not show the workspace markers
+
+If you launched through `start_complete_stack.py`, the RViz config should already contain the marker displays.
+
+If you launched manually, ensure:
+
+- `workspace.py` is running
+- RViz fixed frame is `world`
+- the marker topics are enabled in the Displays panel
