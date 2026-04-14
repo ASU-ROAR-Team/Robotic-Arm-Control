@@ -1,6 +1,6 @@
 # Robotic-Arm-Control
 
-This repository contains the ROAR arm MoveIt setup and three teleoperation scripts (legacy workspace).
+This repository contains the ROAR arm MoveIt setup and three teleoperation scripts for the 6DoF workspace.
 
 ## Build & install (single-terminal: RViz + Gazebo)
 

@@ -33,6 +33,7 @@ from tf2_ros.transform_listener import TransformListener
 import numpy as np
 import argparse, math, sys, time
 import os
+import subprocess
 import xml.etree.ElementTree as ET
 
 try:
@@ -44,14 +45,15 @@ except Exception:
 # Defaults (used only if URDF cannot be loaded)
 # =====================================================================
 DEFAULT_JOINT_LIMITS = {
-    "Joint_1": (-0.0170,  3.1590),
-    "Joint_2": (-2.6350,  0.0170),
-    "Joint_3": (-0.0170,  3.1590),
-    "Joint_4": (-0.0170,  3.1590),
-    "Joint_5": (-0.0170,  3.1590),
+    "joint_0": (-0.0170,  3.1590),
+    "joint_1": (-2.6350,  0.0170),
+    "joint_2": (-0.0170,  3.1590),
+    "joint_3": (-1.6581,  1.6581),
+    "joint_4": (-1.6581,  1.6581),
+    "joint_5": (-1.6581,  1.6581),
 }
 DEFAULT_JOINT_NAMES = list(DEFAULT_JOINT_LIMITS.keys())
-EE_LINK     = "Link_5"
+EE_LINK     = "link_6"
 WORLD_FRAME = "world"
 BASE_FRAME  = "base_link"
 # =====================================================================
@@ -60,10 +62,10 @@ BASE_FRAME  = "base_link"
 def resolve_urdf_path() -> str | None:
     if get_package_share_directory is not None:
         try:
-            return os.path.join(get_package_share_directory("legacy_pkg"), "urdf", "legacy.urdf")
+                return os.path.join(get_package_share_directory("sixdof_pkg"), "urdf", "roar.urdf")
         except Exception:
             pass
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "legacy_pkg", "urdf", "legacy.urdf"))
+            return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sixdof_pkg", "urdf", "roar.urdf"))
 
 
 def load_chain_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list[str], dict[str, tuple[float, float]], str | None]:
@@ -72,7 +74,17 @@ def load_chain_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[lis
         return DEFAULT_JOINT_NAMES, DEFAULT_JOINT_LIMITS.copy(), None
 
     try:
-        root = ET.parse(urdf_path).getroot()
+        xml_text = subprocess.check_output(
+            [
+                "xacro",
+                urdf_path,
+                "robot_name:=roar",
+                "use_gazebo:=false",
+                "use_sim_ros2_control:=false",
+            ],
+            text=True,
+        )
+        root = ET.fromstring(xml_text)
     except Exception:
         return DEFAULT_JOINT_NAMES, DEFAULT_JOINT_LIMITS.copy(), urdf_path
 

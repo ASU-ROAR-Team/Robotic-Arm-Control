@@ -35,17 +35,18 @@ import argparse, math
 # Your actual URDF joint limits
 # =====================================================================
 JOINT_LIMITS = {
-    "Joint_1": (-0.0170,  3.1590),
-    "Joint_2": (-2.6350,  0.0170),
-    "Joint_3": (-0.0170,  3.1590),
-    "Joint_4": (-0.0170,  3.1590),
-    "Joint_5": (-0.0170,  3.1590),
+    "joint_0": (-0.0170,  3.1590),
+    "joint_1": (-2.6350,  0.0170),
+    "joint_2": (-0.0170,  3.1590),
+    "joint_3": (-1.6581,  1.6581),
+    "joint_4": (-1.6581,  1.6581),
+    "joint_5": (-1.6581,  1.6581),
 }
 JOINT_NAMES  = list(JOINT_LIMITS.keys())
-EE_LINK      = "Link_5"
+EE_LINK      = "link_6"
 BASE_FRAME   = "base_link"
 WORLD_FRAME  = "world"
-GROUP_NAME   = "rover_arm"
+GROUP_NAME   = "arm_controller"
 LOCK_TOL     = 0.05
 # =====================================================================
 
@@ -143,7 +144,7 @@ class WorkspaceChecker(Node):
         if not lock:
             return []
         out = []
-        for jn in ["Joint_4", "Joint_5"]:
+        for jn in ["joint_4", "joint_5"]:
             jc = JointConstraint()
             jc.joint_name = jn
             jc.position = self.current_joints.get(jn, 0.0)
@@ -269,7 +270,7 @@ class WorkspaceChecker(Node):
                       f"at {pct_lo:.0f}% | remaining: -{room_neg:.1f}° / +{room_pos:.1f}°")
 
         print("  Teleop rotation remaining (your controls):")
-        for axis, joint_name in [("rz", "Joint_1"), ("ry", "Joint_2"), ("rx", "Joint_3")]:
+        for axis, joint_name in [("rz", "joint_0"), ("ry", "joint_1"), ("rx", "joint_2")]:
             v = self.current_joints.get(joint_name, 0.0)
             lo, hi = JOINT_LIMITS[joint_name]
             print(f"    {axis}: {joint_name} -> -{math.degrees(v-lo):.1f}° / +{math.degrees(hi-v):.1f}°")
@@ -283,14 +284,15 @@ class WorkspaceChecker(Node):
         configs.append(current_cfg)
         if lock:
             if not minimal:
-                print("  Orientation lock enabled: Joint_4 and Joint_5 fixed to current values.")
-            j4_val = self.current_joints.get("Joint_4", 0.0)
-            j5_val = self.current_joints.get("Joint_5", 0.0)
+                print("  Orientation lock enabled: joint_4 and joint_5 fixed to current values.")
+            j4_val = self.current_joints.get("joint_4", 0.0)
+            j5_val = self.current_joints.get("joint_5", 0.0)
             for _ in range(max(0, n_samples - 1)):
                 cfg = [
-                    np.random.uniform(JOINT_LIMITS["Joint_1"][0], JOINT_LIMITS["Joint_1"][1]),
-                    np.random.uniform(JOINT_LIMITS["Joint_2"][0], JOINT_LIMITS["Joint_2"][1]),
-                    np.random.uniform(JOINT_LIMITS["Joint_3"][0], JOINT_LIMITS["Joint_3"][1]),
+                    np.random.uniform(JOINT_LIMITS["joint_0"][0], JOINT_LIMITS["joint_0"][1]),
+                    np.random.uniform(JOINT_LIMITS["joint_1"][0], JOINT_LIMITS["joint_1"][1]),
+                    np.random.uniform(JOINT_LIMITS["joint_2"][0], JOINT_LIMITS["joint_2"][1]),
+                    np.random.uniform(JOINT_LIMITS["joint_3"][0], JOINT_LIMITS["joint_3"][1]),
                     j4_val,
                     j5_val
                 ]
@@ -376,7 +378,7 @@ def main():
     parser.add_argument("--samples", type=int, default=2000,
                         help="Number of FK samples (default: 2000)")
     parser.add_argument("--lock", action="store_true",
-                        help="Lock Joint_4 and Joint_5 to current values (orientation lock)")
+                        help="Lock joint_4 and joint_5 to current values (orientation lock)")
     parser.add_argument("--minimal", action="store_true",
                         help="Show only key results (rotation headroom + reachable translation)")
     args = parser.parse_args()
