@@ -13,14 +13,12 @@ from collision_guard import CollisionGuard
 import sys
 import threading
 
-# === CONFIGURATION (Updated for New_rover_Arm) ===
-# The tip link of your arm chain (before the gripper)
-# Sourced from your URDF: <link name="Link_5">
-LINK_NAME = "Link_5"  
+# === CONFIGURATION ===
+# The tip link of the arm chain before the grippers.
+LINK_NAME = "link_6"  
 
-# The MoveIt planning group for the arm joints
-# Sourced from your SRDF: <group name="rover_arm">
-GROUP_NAME = "rover_arm"  
+# The MoveIt planning group for the arm joints.
+GROUP_NAME = "arm_controller"  
 
 # The fixed world frame
 FRAME_ID = "world"

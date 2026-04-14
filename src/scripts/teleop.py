@@ -6,13 +6,13 @@ kinematics.yaml: KDL, position_only_ik: true  (unchanged)
 
 HOW ROTATION WORKS:
     Rotation commands are joint-space and intuitive:
-        rz/rz- -> Joint_1 (base yaw)
-        ry/ry- -> Joint_2 (shoulder pitch)
-        rx/rx- -> Joint_3 (elbow pitch)
+                rz/rz- -> joint_0 (base yaw)
+                ry/ry- -> joint_1 (shoulder pitch)
+                rx/rx- -> joint_2 (elbow pitch)
     This gives direct "human-style" control of joints 1-3.
 
 ORIENTATION LOCK:
-  Locks Joint_4 (pitch) + Joint_5 (twist) as joint constraints.
+    Locks joint_4 (pitch) + joint_5 (twist) as joint constraints.
   Automatically applied to every move command while locked.
 
 COMMANDS:
@@ -28,19 +28,24 @@ COMMANDS:
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from builtin_interfaces.msg import Duration as BuiltinDuration
+from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import Constraints, PositionConstraint, JointConstraint
 from shape_msgs.msg import SolidPrimitive
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64MultiArray
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from std_msgs.msg import String
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
+from trajectory_msgs.msg import JointTrajectoryPoint
 from collision_guard import CollisionGuard
 import sys, termios, threading, math
 import json
 import os
+import subprocess
 import xml.etree.ElementTree as ET
 
 try:
@@ -48,34 +53,39 @@ try:
 except Exception:
     get_package_share_directory = None
 
-LINK_NAME   = "Link_5"
+LINK_NAME   = "link_6"
 GROUP_NAME  = "arm_controller"
 FRAME_ID    = "world"
 BASE_FRAME  = "base_link"
 DEFAULT_CM  = 1.0
 DEFAULT_DEG = 10.0
-PITCH_JOINT = "Joint_4"
-TWIST_JOINT = "Joint_5"
+PITCH_JOINT = "joint_4"
+TWIST_JOINT = "joint_5"
 LOCK_TOL    = 0.05
 ROT_JOINT_TOL = 0.03
+HAND_CONTROLLER = "/hand_controller_controller/follow_joint_trajectory"
+GRIPPER_OPEN = 0.015
+GRIPPER_CLOSED = 0.0
 
 JOINT_LIMITS = {
-    "Joint_1": (-0.0170,  3.1590),
-    "Joint_2": (-2.6350,  0.0170),
-    "Joint_3": (-0.0170,  3.1590),
-    "Joint_4": (-0.0170,  3.1590),
-    "Joint_5": (-0.0170,  3.1590),
+    "joint_0": (-0.0170,  3.1590),
+    "joint_1": (-2.6350,  0.0170),
+    "joint_2": (-0.0170,  3.1590),
+    "joint_3": (-1.6581,  1.6581),
+    "joint_4": (-1.6581,  1.6581),
+    "joint_5": (-1.6581,  1.6581),
 }
 
 # Safe HOME pose within rover URDF/SRDF bounds (degrees -> radians)
 HOME_JOINTS = {
-    "Joint_1": math.radians(0.0),
-    "Joint_2": math.radians(0.0),
-    "Joint_3": math.radians(0.0),
-    "Joint_4": math.radians(0.0),
-    "Joint_5": math.radians(0.0),
+    "joint_0": math.radians(0.0),
+    "joint_1": math.radians(0.0),
+    "joint_2": math.radians(0.0),
+    "joint_3": math.radians(0.0),
+    "joint_4": math.radians(0.0),
+    "joint_5": math.radians(0.0),
 }
-ARM_JOINTS = ["Joint_1", "Joint_2", "Joint_3", "Joint_4", "Joint_5"]
+ARM_JOINTS = ["joint_0", "joint_1", "joint_2", "joint_3", "joint_4", "joint_5"]
 
 DIRECTION_MAP = {
     "w": (+1,  0,  0), "s": (-1,  0,  0),
@@ -88,14 +98,14 @@ AXIS_LABEL = {
     "q": "+Z up",   "e": "-Z down",
 }
 ROT_CMDS = {
-    "rz":  ("z", +1, "Joint_1 + (base yaw)"),
-    "rz-": ("z", -1, "Joint_1 - (base yaw)"),
-    "ry":  ("y", +1, "Joint_2 + (shoulder)"),
-    "ry-": ("y", -1, "Joint_2 - (shoulder)"),
-    "rx":  ("x", +1, "Joint_3 + (elbow)"),
-    "rx-": ("x", -1, "Joint_3 - (elbow)"),
+    "rz":  ("z", +1, "joint_0 + (base yaw)"),
+    "rz-": ("z", -1, "joint_0 - (base yaw)"),
+    "ry":  ("y", +1, "joint_1 + (shoulder)"),
+    "ry-": ("y", -1, "joint_1 - (shoulder)"),
+    "rx":  ("x", +1, "joint_2 + (elbow)"),
+    "rx-": ("x", -1, "joint_2 - (elbow)"),
 }
-ROT_AXIS_TO_JOINT = {"z": "Joint_1", "y": "Joint_2", "x": "Joint_3"}
+ROT_AXIS_TO_JOINT = {"z": "joint_0", "y": "joint_1", "x": "joint_2"}
 
 msg = f"""
 ┌────────────────────────────────────────────────────────┐
@@ -107,17 +117,21 @@ msg = f"""
 │    "w 5" = 5cm,  no number = {DEFAULT_CM:.0f}cm default│
 │                                                        │
 │  ROTATION (joint-space, human-style):                  │
-│    rz  / rz-  → Joint_1 yaw + / -                      │
-│    ry  / ry-  → Joint_2 shoulder + / -                 │
-│    rx  / rx-  → Joint_3 elbow + / -                    │
+│    rz  / rz-  → joint_0 yaw + / -                      │
+│    ry  / ry-  → joint_1 shoulder + / -                 │
+│    rx  / rx-  → joint_2 elbow + / -                    │
 │    "rz 10" = move that joint by 10°                    │
 │                                                        │
-│  ORIENTATION LOCK (J4 pitch + J5 twist):               │
+│  ORIENTATION LOCK (joint_4 pitch + joint_5 twist):     │
 │    c  → lock current orientation                       │
 │    u  → unlock                                         │
 │                                                        │
 │  HOME MACRO:                                           │
 │    h  → move to saved HOME joint pose                  │
+│                                                        │
+│  GRIPPER:                                              │
+│    o  → open gripper                                   │
+│    k  → close gripper                                  │
 │                                                        │
 │    p  → print joints + lock status + EE position       │
 │    x  → quit                                           │
@@ -128,10 +142,10 @@ msg = f"""
 def _resolve_urdf_path() -> str | None:
     if get_package_share_directory is not None:
         try:
-            return os.path.join(get_package_share_directory("legacy_pkg"), "urdf", "legacy.urdf")
+                return os.path.join(get_package_share_directory("sixdof_pkg"), "urdf", "roar.urdf")
         except Exception:
             pass
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "legacy_pkg", "urdf", "legacy.urdf"))
+            return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sixdof_pkg", "urdf", "roar.urdf"))
 
 
 def _load_arm_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list[str], dict[str, tuple[float, float]]]:
@@ -140,7 +154,17 @@ def _load_arm_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list
         return ARM_JOINTS, JOINT_LIMITS.copy()
 
     try:
-        root = ET.parse(urdf_path).getroot()
+        xml_text = subprocess.check_output(
+            [
+                "xacro",
+                urdf_path,
+                "robot_name:=roar",
+                "use_gazebo:=false",
+                "use_sim_ros2_control:=false",
+            ],
+            text=True,
+        )
+        root = ET.fromstring(xml_text)
     except Exception:
         return ARM_JOINTS, JOINT_LIMITS.copy()
 
@@ -193,6 +217,7 @@ class Teleop(Node):
     def __init__(self):
         super().__init__("rover_teleop")
         self._client = ActionClient(self, MoveGroup, "move_action")
+        self._hand_client = ActionClient(self, FollowJointTrajectory, HAND_CONTROLLER)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.done = threading.Event()
@@ -204,6 +229,9 @@ class Teleop(Node):
             for jn in self.arm_joint_names
         }
         self.create_subscription(JointState, "joint_states", self._js, 10)
+        self.create_subscription(String, "/teleop_command", self._teleop_cmd_cb, 10)
+        self.create_subscription(String, "/lock_orientation", self._lock_cmd_cb, 10)
+        self.create_subscription(Float64MultiArray, "/ik_target_pose", self._ik_target_cb, 10)
         self.locked = False
         self.locked_pitch = 0.0
         self.locked_twist = 0.0
@@ -218,7 +246,49 @@ class Teleop(Node):
         self.get_logger().info(
             f"Using group='{GROUP_NAME}', joints={self.arm_joint_names}, urdf_limits_loaded={bool(self.arm_joint_names)}"
         )
+        self.get_logger().info("Listening: /teleop_command, /lock_orientation, /ik_target_pose")
         self._publish_lock_state()
+
+    def _teleop_cmd_cb(self, msg: String):
+        line = (msg.data or "").strip()
+        if not line:
+            return
+        parsed = parse(line)
+        if parsed is None:
+            return
+        self._execute(parsed, source="ros")
+
+    def _lock_cmd_cb(self, msg: String):
+        text = (msg.data or "").strip().lower()
+        if text in ("true", "1", "lock", "locked", "on"):
+            self.lock()
+        elif text in ("false", "0", "unlock", "unlocked", "off"):
+            self.unlock()
+
+    def _ik_target_cb(self, msg: Float64MultiArray):
+        data = list(msg.data)
+        if len(data) < 3:
+            self.get_logger().warn("/ik_target_pose requires at least [x,y,z]")
+            return
+
+        x_raw, y_raw, z_raw = float(data[0]), float(data[1]), float(data[2])
+        max_abs = max(abs(x_raw), abs(y_raw), abs(z_raw))
+        if max_abs > 3.0:
+            x, y, z = x_raw / 100.0, y_raw / 100.0, z_raw / 100.0
+            unit = "cm"
+        else:
+            x, y, z = x_raw, y_raw, z_raw
+            unit = "m"
+
+        if not self.done.is_set():
+            self.get_logger().warn("IK target ignored: still executing previous command.")
+            return
+
+        self.get_logger().info(
+            f"IK target ({unit}) -> world x={x:.3f}, y={y:.3f}, z={z:.3f}"
+            + ("  [LOCKED]" if self.locked else "")
+        )
+        self.move_xyz_absolute(x, y, z)
 
     def _publish_lock_state(self):
         msg = String()
@@ -269,6 +339,10 @@ class Teleop(Node):
         for n in self.arm_joint_names:
             v = self.joints.get(n, float("nan"))
             lines.append(f"    {n}  {v:+.4f} rad  ({math.degrees(v):+.1f}°)")
+        for n in ["left_gripper", "right_gripper"]:
+            if n in self.joints:
+                v = self.joints[n]
+                lines.append(f"    {n}  {v:+.4f} m")
         p = self._tf(FRAME_ID, LINK_NAME)
         if p:
             lines.append(f"  EE (world): x={p.x:.4f}  y={p.y:.4f}  z={p.z:.4f}")
@@ -339,6 +413,16 @@ class Teleop(Node):
         c.joint_constraints.extend(self._lock_jc())
         self._send(c)
 
+    def move_xyz_absolute(self, x, y, z):
+        if not self.done.is_set():
+            self.get_logger().warn("Still executing.")
+            return
+        self.done.clear()
+        c = Constraints()
+        c.position_constraints.append(self._pos_constraint(x, y, z))
+        c.joint_constraints.extend(self._lock_jc())
+        self._send(c)
+
     def go_home(self):
         if not self.done.is_set():
             self.get_logger().warn("Still executing.")
@@ -362,8 +446,8 @@ class Teleop(Node):
         self.done.clear()
 
         target_joint = ROT_AXIS_TO_JOINT[axis]
-        if any(jn not in self.joints for jn in ["Joint_1", "Joint_2", "Joint_3"]):
-            self.get_logger().error("Missing joint states for Joint_1/Joint_2/Joint_3")
+        if any(jn not in self.joints for jn in ["joint_0", "joint_1", "joint_2"]):
+            self.get_logger().error("Missing joint states for joint_0/joint_1/joint_2")
             self.done.set()
             return
 
@@ -374,7 +458,7 @@ class Teleop(Node):
             return
 
         c = Constraints()
-        for joint_name in ["Joint_1", "Joint_2", "Joint_3"]:
+        for joint_name in ["joint_0", "joint_1", "joint_2"]:
             position = target if joint_name == target_joint else self.joints[joint_name]
             c.joint_constraints.append(self._joint_constraint(joint_name, position))
         c.joint_constraints.extend(self._lock_jc())
@@ -383,6 +467,39 @@ class Teleop(Node):
             f"-> {math.degrees(target):+.1f}°"
         )
         self._send(c)
+
+    def set_gripper(self, opening: float):
+        opening = max(GRIPPER_CLOSED, min(GRIPPER_OPEN, opening))
+        if not self._hand_client.wait_for_server(timeout_sec=1.0):
+            self.get_logger().error("Hand controller action server unavailable")
+            return
+
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory.joint_names = ["left_gripper", "right_gripper"]
+
+        point = JointTrajectoryPoint()
+        point.positions = [opening, opening]
+        point.time_from_start = BuiltinDuration(sec=2, nanosec=0)
+        goal.trajectory.points = [point]
+
+        label = "open" if opening > (GRIPPER_OPEN / 2.0) else "close"
+        self.get_logger().info(f"GRIPPER {label} -> {opening:.4f} m")
+
+        self._hand_client.send_goal_async(goal).add_done_callback(self._on_hand_goal)
+
+    def _on_hand_goal(self, future):
+        goal_handle = future.result()
+        if goal_handle is None or not goal_handle.accepted:
+            self.get_logger().warn("Gripper goal rejected.")
+            return
+        goal_handle.get_result_async().add_done_callback(self._on_hand_result)
+
+    def _on_hand_result(self, future):
+        result = future.result()
+        if result is None:
+            self.get_logger().warn("Gripper command failed.")
+            return
+        self.get_logger().info("Gripper command done.")
 
     def _send(self, c: Constraints):
         ok, reason = self.collision_guard.check_current_state(self.joints)
@@ -414,6 +531,38 @@ class Teleop(Node):
         self.get_logger().info("Done." if val == 1 else f"Failed (code {val})")
         self.done.set()
 
+    def _execute(self, parsed, source: str = "cli"):
+        if parsed[0] == "quit":
+            self.get_logger().info(f"Quit requested from {source}")
+            rclpy.shutdown()
+        elif parsed[0] == "print":
+            self.print_status()
+        elif parsed[0] == "home":
+            self.go_home()
+        elif parsed[0] == "gripper":
+            self.set_gripper(parsed[1])
+        elif parsed[0] == "lock":
+            self.lock()
+        elif parsed[0] == "unlock":
+            self.unlock()
+        elif parsed[0] == "xyz":
+            _, dx, dy, dz, cmd = parsed
+            cm = (dx**2 + dy**2 + dz**2) ** 0.5 * 100
+            self.get_logger().info(
+                f"XYZ {cm:.1f}cm world {AXIS_LABEL[cmd]}"
+                + ("  [LOCKED]" if self.locked else "")
+            )
+            self.move_xyz(dx, dy, dz)
+        elif parsed[0] == "rot":
+            _, axis, angle, desc = parsed
+            self.get_logger().info(
+                f"ROT {desc}  {math.degrees(angle):+.1f}°"
+                + ("  [LOCKED]" if self.locked else "")
+            )
+            self.rotate_joint_axis(axis, angle)
+        elif parsed[0] == "bad":
+            self.get_logger().warn(f"Ignoring invalid {source} command: {parsed[1]}")
+
 
 def parse(line):
     parts = line.strip().lower().split()
@@ -423,6 +572,8 @@ def parse(line):
     if cmd == "x": return ("quit",)
     if cmd == "p": return ("print",)
     if cmd == "h": return ("home",)
+    if cmd == "o": return ("gripper", GRIPPER_OPEN)
+    if cmd == "k": return ("gripper", GRIPPER_CLOSED)
     if cmd == "c": return ("lock",)
     if cmd == "u": return ("unlock",)
     if cmd in DIRECTION_MAP:
@@ -467,6 +618,7 @@ def run(node: Teleop):
                 print("Exiting..."); rclpy.shutdown(); break
             elif r[0] == "print":  node.print_status()
             elif r[0] == "home":   node.go_home()
+            elif r[0] == "gripper": node.set_gripper(r[1])
             elif r[0] == "lock":   node.lock()
             elif r[0] == "unlock": node.unlock()
             elif r[0] == "xyz":
@@ -484,19 +636,30 @@ def run(node: Teleop):
                 node.rotate_joint_axis(axis, angle)
             elif r[0] == "bad":
                 print(f"  Error: {r[1]}")
-                print("  Try: h | w 5 | q 10 | rz 30 | ry- 15 | c | u | p | x")
+                print("  Try: h | o | k | w 5 | q 10 | rz 30 | ry- 15 | c | u | p | x")
     except Exception as e:
         print(e)
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
 
 
+def run_headless(node: Teleop):
+    node.get_logger().info(
+        'No interactive TTY detected. Teleop running in ROS-topic mode only: '
+        '/teleop_command, /ik_target_pose, /lock_orientation.'
+    )
+    rclpy.spin(node)
+
+
 def main():
     rclpy.init()
     node = Teleop()
-    threading.Thread(target=run, args=(node,), daemon=True).start()
     try:
-        rclpy.spin(node)
+        if sys.stdin.isatty():
+            threading.Thread(target=run, args=(node,), daemon=True).start()
+            rclpy.spin(node)
+        else:
+            run_headless(node)
     except KeyboardInterrupt:
         pass
     finally:

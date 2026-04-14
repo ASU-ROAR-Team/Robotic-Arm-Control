@@ -22,19 +22,20 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from collision_guard import CollisionGuard
 
-LINK_NAME = "Link_5"
-GROUP_NAME = "rover_arm"
+LINK_NAME = "link_6"
+GROUP_NAME = "arm_controller"
 FRAME_ID = "world"
-PITCH_JOINT = "Joint_4"
-TWIST_JOINT = "Joint_5"
+PITCH_JOINT = "joint_4"
+TWIST_JOINT = "joint_5"
 LOCK_TOL = 0.05
 
 HOME_JOINTS = {
-    "Joint_1": math.radians(30.0),
-    "Joint_2": math.radians(-40.0),
-    "Joint_3": math.radians(160.0),
-    "Joint_4": math.radians(70.0),
-    "Joint_5": math.radians(0.0),
+    "joint_0": math.radians(0.0),
+    "joint_1": math.radians(0.0),
+    "joint_2": math.radians(0.0),
+    "joint_3": math.radians(0.0),
+    "joint_4": math.radians(0.0),
+    "joint_5": math.radians(0.0),
 }
 
 DIRECTION_MAP = {
@@ -179,7 +180,7 @@ class ArmTestRunner(Node):
 
     def move_home(self):
         c = Constraints()
-        for jn in ["Joint_1", "Joint_2", "Joint_3", "Joint_4", "Joint_5"]:
+        for jn in ["joint_0", "joint_1", "joint_2", "joint_3", "joint_4", "joint_5"]:
             c.joint_constraints.append(self._joint_constraint(jn, HOME_JOINTS[jn], tol=0.03))
         return self._execute_constraints(c)
 

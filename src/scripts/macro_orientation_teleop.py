@@ -32,13 +32,13 @@ from tf2_ros.transform_listener import TransformListener
 from collision_guard import CollisionGuard
 import sys, termios, threading
 
-LINK_NAME   = "Link_5"
-GROUP_NAME  = "rover_arm"
+LINK_NAME   = "link_6"
+GROUP_NAME  = "arm_controller"
 FRAME_ID    = "world"
 DEFAULT_CM  = 1.0
 
-PITCH_JOINT = "Joint_4"
-TWIST_JOINT = "Joint_5"
+PITCH_JOINT = "joint_4"
+TWIST_JOINT = "joint_5"
 PITCH_TOL   = 0.05
 TWIST_TOL   = 0.05
 

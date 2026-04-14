@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-wrist_lock_teleop.py — Lock Joint_4 (pitch) + Joint_5 (twist), move XYZ
+wrist_lock_teleop.py — Lock joint_4 (pitch) + joint_5 (twist), move XYZ
 -------------------------------------------------------------------------
 kinematics.yaml: KDL, position_only_ik: true  (no changes needed)
 
@@ -25,13 +25,13 @@ from tf2_ros.transform_listener import TransformListener
 from collision_guard import CollisionGuard
 import sys, select, termios, tty, threading
 
-LINK_NAME   = "Link_5"
-GROUP_NAME  = "rover_arm"
+LINK_NAME   = "link_6"
+GROUP_NAME  = "arm_controller"
 FRAME_ID    = "world"
 DEFAULT_CM  = 1.0
 
-PITCH_JOINT = "Joint_4"
-TWIST_JOINT = "Joint_5"
+PITCH_JOINT = "joint_4"
+TWIST_JOINT = "joint_5"
 PITCH_TOL   = 0.05
 TWIST_TOL   = 0.05
 
@@ -60,7 +60,7 @@ msg = """
 │    "q 10"      → move 10 cm up              │
 │                                             │
 │  ORIENTATION:                               │
-│    c  → LOCK current Joint_4 + Joint_5      │
+│    c  → LOCK current joint_4 + joint_5      │
 │    u  → UNLOCK wrist                        │
 │                                             │
 │    x  → Quit                                │
