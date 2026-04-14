@@ -1,6 +1,6 @@
 # import the packages
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
+from launch.actions import ExecuteProcess, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import SetParameter
 from ament_index_python.packages import get_package_share_directory
@@ -10,6 +10,11 @@ import os
 def generate_launch_description():
     moveit_pkg_path = get_package_share_directory('sixdof_moveit')
     sixdof_pkg_path = get_package_share_directory('sixdof_pkg')
+
+    cleanup_gazebo = ExecuteProcess(
+        cmd=['bash', '-lc', "pkill -f 'ign gazebo' || true"],
+        output='screen'
+    )
 
     lab_gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -46,7 +51,8 @@ def generate_launch_description():
         SetEnvironmentVariable(name='QT_OPENGL', value='software'),
         SetEnvironmentVariable(name='QT_X11_NO_MITSHM', value='1'),
         SetParameter(name='use_sim_time', value=True),
-        lab_gazebo,
+        cleanup_gazebo,
+        TimerAction(period=1.0, actions=[lab_gazebo]),
         delay_move_group,
         delay_rviz,
     ])
