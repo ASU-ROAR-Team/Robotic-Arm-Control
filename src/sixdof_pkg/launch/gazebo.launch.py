@@ -6,6 +6,16 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
+
+def software_gl_actions():
+    if os.environ.get('SIXDOF_FORCE_SOFTWARE_GL', '1').lower() in {'0', 'false', 'no', 'off'}:
+        return []
+    return [
+        SetEnvironmentVariable(name='LIBGL_ALWAYS_SOFTWARE', value='1'),
+        SetEnvironmentVariable(name='QT_OPENGL', value='software'),
+        SetEnvironmentVariable(name='QT_X11_NO_MITSHM', value='1'),
+    ]
+
 def generate_launch_description():
     # --- 1. GET DYNAMIC PACKAGE PATHS ---
     pkg_sixdof_pkg = get_package_share_directory('sixdof_pkg')
@@ -56,7 +66,15 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc_content, 'use_sim_time': True}]
+        parameters=[{'robot_description': robot_desc_content, 'use_sim_time': True}],
+        remappings=[('/joint_states', '/joint_states_corrected')],
+    )
+
+    gripper_state_republisher = Node(
+        package='sixdof_pkg',
+        executable='gripper_joint_state_republisher.py',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
     )
 
     # --- 7. BRIDGE (ROS <-> FORTRESS) ---
@@ -96,10 +114,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        SetEnvironmentVariable(name='LIBGL_ALWAYS_SOFTWARE', value='1'),
-        SetEnvironmentVariable(name='QT_OPENGL', value='software'),
-        SetEnvironmentVariable(name='QT_X11_NO_MITSHM', value='1'),
+        *software_gl_actions(),
         gazebo,
+        gripper_state_republisher,
         node_robot_state_publisher,
         spawn_entity,
         bridge,

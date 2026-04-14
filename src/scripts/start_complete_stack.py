@@ -54,6 +54,12 @@ def sync_rviz_config() -> None:
         print(f"RViz source config not found: {RVIZ_SOURCE}")
         return
     RVIZ_INSTALL.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if RVIZ_INSTALL.exists() and RVIZ_SOURCE.samefile(RVIZ_INSTALL):
+            print(f"[sync] rviz config already current: {RVIZ_INSTALL}")
+            return
+    except FileNotFoundError:
+        pass
     shutil.copy2(RVIZ_SOURCE, RVIZ_INSTALL)
     print(f"[sync] rviz config: {RVIZ_SOURCE} -> {RVIZ_INSTALL}")
 

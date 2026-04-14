@@ -36,6 +36,7 @@ GROUP_NAME = "arm_controller"
 FRAME_ID = "world"
 BASE_FRAME = "base_link"
 HAND_CONTROLLER = "/hand_controller_controller/follow_joint_trajectory"
+JOINT_STATE_TOPIC = "/joint_states_corrected"
 DEFAULT_CM = 1.0
 POSITION_TOL = 0.01
 ORIENTATION_TOL = 0.20
@@ -119,7 +120,7 @@ class Teleop(Node):
         self.maintain_orientation = True
         self.target_orientation = quat_from_euler(0.0, 0.0, 0.0)
         self.target_orientation_rpy_deg = [0.0, 0.0, 0.0]
-        self.create_subscription(JointState, "joint_states", self._js, 10)
+        self.create_subscription(JointState, JOINT_STATE_TOPIC, self._js, 10)
 
     def _log(self, level, text):
         logger = self.get_logger()
@@ -295,11 +296,11 @@ class Teleop(Node):
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = ["left_gripper", "right_gripper"]
         point = JointTrajectoryPoint()
-        point.positions = [-opening, opening]
+        point.positions = [opening, opening]
         point.time_from_start = BuiltinDuration(sec=0, nanosec=int(GRIPPER_TRAJECTORY_SECONDS * 1_000_000_000))
         goal.trajectory.points = [point]
 
-        self._log("info", f"Gripper -> left={-opening:.3f} m, right={opening:.3f} m")
+        self._log("info", f"Gripper opening -> {opening:.3f} m")
         self.hand_done.clear()
         self._hand_client.send_goal_async(goal).add_done_callback(self._on_hand_goal)
 

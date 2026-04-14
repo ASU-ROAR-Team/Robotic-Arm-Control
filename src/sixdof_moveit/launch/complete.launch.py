@@ -7,6 +7,16 @@ from ament_index_python.packages import get_package_share_directory
 import os
 
 
+def software_gl_actions():
+    if os.environ.get('SIXDOF_FORCE_SOFTWARE_GL', '1').lower() in {'0', 'false', 'no', 'off'}:
+        return []
+    return [
+        SetEnvironmentVariable(name='LIBGL_ALWAYS_SOFTWARE', value='1'),
+        SetEnvironmentVariable(name='QT_OPENGL', value='software'),
+        SetEnvironmentVariable(name='QT_X11_NO_MITSHM', value='1'),
+    ]
+
+
 def generate_launch_description():
     moveit_pkg_path = get_package_share_directory('sixdof_moveit')
     sixdof_pkg_path = get_package_share_directory('sixdof_pkg')
@@ -47,9 +57,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        SetEnvironmentVariable(name='LIBGL_ALWAYS_SOFTWARE', value='1'),
-        SetEnvironmentVariable(name='QT_OPENGL', value='software'),
-        SetEnvironmentVariable(name='QT_X11_NO_MITSHM', value='1'),
+        *software_gl_actions(),
         SetParameter(name='use_sim_time', value=True),
         cleanup_gazebo,
         TimerAction(period=1.0, actions=[lab_gazebo]),

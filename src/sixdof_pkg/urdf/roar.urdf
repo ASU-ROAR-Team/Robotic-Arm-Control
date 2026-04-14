@@ -234,7 +234,7 @@
     <parent link="link_6" />
     <child link="right_gripper_link" />
     <axis xyz="0 0 1" />
-    <limit lower="0.0" upper="0.075" effort="40.0" velocity="0.2" />
+    <limit lower="0.0" upper="0.08" effort="40.0" velocity="0.2" />
   </joint>
 
   <link name="left_gripper_link">
@@ -261,8 +261,8 @@
     <origin xyz="0.0855 -0.0175 0.1025" rpy="-1.5708 -0.13911 1.5708" />
     <parent link="link_6" />
     <child link="left_gripper_link" />
-    <axis xyz="0 0 -1" />
-    <limit lower="-0.075" upper="0.0" effort="40.0" velocity="0.2" />
+    <axis xyz="0 0 1" />
+    <limit lower="0.0" upper="0.08" effort="40.0" velocity="0.2" />
   </joint>
 
   <gazebo reference="base_link"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
