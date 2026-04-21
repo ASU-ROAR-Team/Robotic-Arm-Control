@@ -13,6 +13,7 @@ Features:
 import argparse
 import math
 import threading
+import time
 from queue import Empty, Queue
 import tkinter as tk
 from tkinter import scrolledtext
@@ -29,6 +30,7 @@ from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from std_msgs.msg import String
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 LINK_NAME = "link_6"
@@ -121,6 +123,12 @@ class Teleop(Node):
         self.target_orientation = quat_from_euler(0.0, 0.0, 0.0)
         self.target_orientation_rpy_deg = [0.0, 0.0, 0.0]
         self.create_subscription(JointState, JOINT_STATE_TOPIC, self._js, 10)
+        # Reference frame (can be changed at runtime)
+        self.reference_frame = FRAME_ID
+        self.create_subscription(String, '/reference_frame', self._on_ref_frame, 10)
+        self._ref_capture_timer = None
+        # Publisher to request reference frame pose changes
+        self._ref_pose_pub = self.create_publisher(PoseStamped, '/ee_reference_pose', 10)
 
     def _log(self, level, text):
         logger = self.get_logger()
@@ -133,24 +141,160 @@ class Teleop(Node):
         if self.log_callback is not None:
             self.log_callback(level, text)
 
+    def rotate_reference(self, axis: str, degrees: float):
+        # Rotate the ee_ref frame about a world axis ('X','Y','Z') by degrees, keeping position
+        # Find current ee_ref pose in world (fallback to EE link)
+        transform = self._tf_transform('world', 'ee_ref')
+        if transform is None:
+            transform = self._tf_transform('world', LINK_NAME)
+            if transform is None:
+                self._log('error', 'No ee_ref or EE transform available to rotate')
+                return
+
+        tx = transform.translation.x
+        ty = transform.translation.y
+        tz = transform.translation.z
+        qx = transform.rotation.x
+        qy = transform.rotation.y
+        qz = transform.rotation.z
+        qw = transform.rotation.w
+
+        # rotation quaternion about specified world axis
+        a = axis.upper()
+        rad = math.radians(degrees)
+        if a == 'X':
+            qrot = quat_from_euler(rad, 0.0, 0.0)
+        elif a == 'Y':
+            qrot = quat_from_euler(0.0, rad, 0.0)
+        else:
+            qrot = quat_from_euler(0.0, 0.0, rad)
+
+        # q_new = qrot * q_current (apply rotation in world frame)
+        def quat_mult(q1, q2):
+            x1, y1, z1, w1 = q1
+            x2, y2, z2, w2 = q2
+            qw = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+            qx = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+            qy = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+            qz = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+            return (qx, qy, qz, qw)
+
+        q_current = (qx, qy, qz, qw)
+        q_new = quat_mult(qrot, q_current)
+
+        ps = PoseStamped()
+        ps.header.frame_id = 'world'
+        ps.header.stamp = self.get_clock().now().to_msg()
+        ps.pose.position.x = tx
+        ps.pose.position.y = ty
+        ps.pose.position.z = tz
+        ps.pose.orientation.x = q_new[0]
+        ps.pose.orientation.y = q_new[1]
+        ps.pose.orientation.z = q_new[2]
+        ps.pose.orientation.w = q_new[3]
+        self._ref_pose_pub.publish(ps)
+        self._log('info', f'Rotated ee_ref around world {a} by {degrees:.1f} deg')
+        # done
+
+    def _on_ref_frame(self, msg: String):
+        try:
+            self.set_reference_frame(msg.data)
+        except Exception:
+            pass
+
     def _js(self, msg):
         for name, position in zip(msg.name, msg.position):
             self.joints[name] = position
 
     def _tf_transform(self, parent, child):
+        # Try direct lookup first
         try:
-            return self.tf_buffer.lookup_transform(
-                parent,
-                child,
-                rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=1.0),
-            ).transform
+            if self.tf_buffer.can_transform(parent, child, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=0.5)):
+                return self.tf_buffer.lookup_transform(
+                    parent,
+                    child,
+                    rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=0.5),
+                ).transform
+        except Exception:
+            pass
+
+        # Fallback: attempt to compute parent->child via world frame if possible
+        try:
+            if parent == 'world' or child == 'world':
+                return None
+            # need T_world_parent and T_world_child
+            if not self.tf_buffer.can_transform('world', parent, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=0.5)):
+                return None
+            if not self.tf_buffer.can_transform('world', child, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=0.5)):
+                return None
+            t_world_parent = self.tf_buffer.lookup_transform('world', parent, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=0.5))
+            t_world_child = self.tf_buffer.lookup_transform('world', child, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=0.5))
+            # compute T_parent_child = inv(T_world_parent) * T_world_child
+            inv_r, inv_t = self._invert_transform(t_world_parent.transform)
+            comp = self._compose_transform(inv_r, inv_t, t_world_child.transform)
+            # return a Transform-like object with translation and rotation
+            class SimpleTransform:
+                pass
+            st = SimpleTransform()
+            st.translation = type('T', (), {})()
+            st.rotation = type('Q', (), {})()
+            st.translation.x, st.translation.y, st.translation.z = comp[1]
+            st.rotation.x, st.rotation.y, st.rotation.z, st.rotation.w = comp[0]
+            self._log('info', f'Used world-based TF fallback for {parent}->{child}')
+            return st
         except Exception as exc:
-            self._log("error", f"TF {parent}->{child}: {exc}")
+            self._log('warn', f'Fallback TF {parent}->{child} failed: {exc}')
             return None
 
+    def _invert_transform(self, transform):
+        # transform: geometry_msgs/Transform
+        q = (transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
+        t = (transform.translation.x, transform.translation.y, transform.translation.z)
+        # inverse rotation is conjugate
+        qx, qy, qz, qw = q
+        inv_q = (-qx, -qy, -qz, qw)
+        # rotate -t by inv_q
+        rt = self._rotate_vector(inv_q, (-t[0], -t[1], -t[2]))
+        return inv_q, rt
+
+    def _compose_transform(self, q1, t1, transform2):
+        # q1: (x,y,z,w) rotation, t1: (x,y,z) translation; transform2 has rotation & translation
+        q2 = (transform2.rotation.x, transform2.rotation.y, transform2.rotation.z, transform2.rotation.w)
+        t2 = (transform2.translation.x, transform2.translation.y, transform2.translation.z)
+        # composed rotation q = q1 * q2
+        x1, y1, z1, w1 = q1
+        x2, y2, z2, w2 = q2
+        qw = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        qx = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+        qy = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+        qz = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+        # rotated translation: t = t1 + rotate(q1, t2)
+        rt2 = self._rotate_vector(q1, t2)
+        tx = t1[0] + rt2[0]
+        ty = t1[1] + rt2[1]
+        tz = t1[2] + rt2[2]
+        return (qx, qy, qz, qw), (tx, ty, tz)
+
+    def _rotate_vector(self, q, v):
+        # rotate vector v by quaternion q
+        x, y, z, w = q
+        vx, vy, vz = v
+        # q * v * q_conj
+        # compute q*v
+        ix =  w * vx + y * vz - z * vy
+        iy =  w * vy + z * vx - x * vz
+        iz =  w * vz + x * vy - y * vx
+        iw = -x * vx - y * vy - z * vz
+        # result = (qv) * q_conj
+        rx = ix * w + iw * -x + iy * -z - iz * -y
+        ry = iy * w + iw * -y + iz * -x - ix * -z
+        rz = iz * w + iw * -z + ix * -y - iy * -x
+        return (rx, ry, rz)
+
     def capture_current_orientation(self) -> bool:
-        transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        # Capture orientation of the end-effector expressed in the current reference frame
+        transform = self._tf_transform(self.reference_frame, LINK_NAME)
         if transform is None:
             return False
         rotation = transform.rotation
@@ -182,6 +326,31 @@ class Teleop(Node):
         self.maintain_orientation = enabled
         self._log("info", f"Maintain orientation: {'ON' if enabled else 'OFF'}")
 
+    def set_reference_frame(self, frame: str):
+        self.reference_frame = frame
+        self._log('info', f'Set reference frame -> {frame}')
+        # Try immediate capture; if unavailable, schedule a short retry
+        ok = False
+        try:
+            ok = self.capture_current_orientation()
+        except Exception:
+            ok = False
+        if not ok:
+            if self._ref_capture_timer is not None:
+                try:
+                    self._ref_capture_timer.cancel()
+                except Exception:
+                    pass
+            def _retry():
+                try:
+                    if self.capture_current_orientation():
+                        self._log('info', 'Captured orientation after retry')
+                except Exception:
+                    pass
+            self._ref_capture_timer = threading.Timer(0.5, _retry)
+            self._ref_capture_timer.daemon = True
+            self._ref_capture_timer.start()
+
     def status_text(self):
         mode = "fixed orientation" if self.maintain_orientation else "position only"
         lines = [f"Mode: {mode}", "Joints:"]
@@ -197,7 +366,7 @@ class Teleop(Node):
             f"pitch={self.target_orientation_rpy_deg[1]:.1f} deg, "
             f"yaw={self.target_orientation_rpy_deg[2]:.1f} deg"
         )
-        world_transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        world_transform = self._tf_transform(self.reference_frame, LINK_NAME)
         if world_transform is not None:
             position = world_transform.translation
             lines.append(f"EE world: x={position.x:.4f} y={position.y:.4f} z={position.z:.4f}")
@@ -218,7 +387,7 @@ class Teleop(Node):
 
     def _position_constraint(self, x, y, z, tol=POSITION_TOL):
         position_constraint = PositionConstraint()
-        position_constraint.header.frame_id = FRAME_ID
+        position_constraint.header.frame_id = self.reference_frame
         position_constraint.link_name = LINK_NAME
         position_constraint.weight = 1.0
         box = SolidPrimitive()
@@ -226,7 +395,7 @@ class Teleop(Node):
         box.dimensions = [tol, tol, tol]
         position_constraint.constraint_region.primitives.append(box)
         target_pose = PoseStamped()
-        target_pose.header.frame_id = FRAME_ID
+        target_pose.header.frame_id = self.reference_frame
         target_pose.pose.position.x = x
         target_pose.pose.position.y = y
         target_pose.pose.position.z = z
@@ -237,7 +406,7 @@ class Teleop(Node):
     def _orientation_constraint(self):
         qx, qy, qz, qw = self.target_orientation
         orientation_constraint = OrientationConstraint()
-        orientation_constraint.header.frame_id = FRAME_ID
+        orientation_constraint.header.frame_id = self.reference_frame
         orientation_constraint.link_name = LINK_NAME
         orientation_constraint.orientation.x = qx
         orientation_constraint.orientation.y = qy
@@ -253,7 +422,7 @@ class Teleop(Node):
         if not self.done.is_set():
             self._log("warn", "Still executing.")
             return
-        transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        transform = self._tf_transform(self.reference_frame, LINK_NAME)
         if transform is None:
             return
         target_x = transform.translation.x + dx
@@ -267,7 +436,7 @@ class Teleop(Node):
         self._send_pose_goal(target_x, target_y, target_z)
 
     def apply_orientation_here(self):
-        transform = self._tf_transform(FRAME_ID, LINK_NAME)
+        transform = self._tf_transform(self.reference_frame, LINK_NAME)
         if transform is None:
             return
         self._log("info", "Applying orientation target at current position")
@@ -333,6 +502,16 @@ class Teleop(Node):
         self._send_constraints(constraints)
 
     def _send_constraints(self, constraints: Constraints):
+        # Debug: log constraint frames and basic info
+        try:
+            frame_info = []
+            for pc in constraints.position_constraints:
+                frame_info.append(f"pos(frame={pc.header.frame_id})")
+            for oc in constraints.orientation_constraints:
+                frame_info.append(f"orient(frame={oc.header.frame_id})")
+            self._log("info", "Sending goal with constraints: " + ", ".join(frame_info))
+        except Exception:
+            pass
         goal = MoveGroup.Goal()
         goal.request.group_name = GROUP_NAME
         goal.request.allowed_planning_time = 5.0
@@ -340,7 +519,11 @@ class Teleop(Node):
         goal.request.max_velocity_scaling_factor = 0.3
         goal.request.max_acceleration_scaling_factor = 0.3
         goal.request.goal_constraints.append(constraints)
-        self._client.wait_for_server()
+        # Wait for action server (log if unavailable)
+        if not self._client.wait_for_server(timeout_sec=2.0):
+            self._log("error", "Move action server unavailable when sending goal")
+            self.done.set()
+            return
         self._client.send_goal_async(goal).add_done_callback(self._on_goal)
 
     def _on_goal(self, future):
@@ -362,6 +545,7 @@ class TeleopGui:
         self.root = root
         self.node = node
         self.log_queue = Queue()
+        self.ref_frame_var = tk.StringVar(value=self.node.reference_frame)
         self.xyz_step_var = tk.StringVar(value=str(DEFAULT_CM))
         self.hold_var = tk.BooleanVar(value=True)
         self.roll_var = tk.StringVar(value="0.0")
@@ -394,7 +578,7 @@ class TeleopGui:
 
         info = tk.Label(
             main,
-            text="Jog XYZ in world frame. Toggle fixed orientation on or off. Use presets or custom RPY to test full 6DOF pose IK.",
+            text="Jog XYZ in the current reference frame. Toggle fixed orientation on or off. Use presets or custom RPY to test full 6DOF pose IK.",
             justify=tk.LEFT,
         )
         info.pack(anchor=tk.W, pady=(4, 10))
@@ -403,6 +587,12 @@ class TeleopGui:
         status.pack(fill=tk.X, pady=(0, 12))
         tk.Label(status, textvariable=self.mode_var, width=34, anchor=tk.W).pack(side=tk.LEFT)
         tk.Label(status, textvariable=self.exec_var, width=18, anchor=tk.W).pack(side=tk.LEFT, padx=(12, 0))
+        # Reference frame selector
+        ref_frame_frame = tk.Frame(status)
+        ref_frame_frame.pack(side=tk.RIGHT)
+        tk.Label(ref_frame_frame, text="Reference Frame:").pack(side=tk.LEFT)
+        tk.OptionMenu(ref_frame_frame, self.ref_frame_var, "world", "ee_ref").pack(side=tk.LEFT)
+        tk.Button(ref_frame_frame, text="Set", command=lambda: self.node.set_reference_frame(self.ref_frame_var.get())).pack(side=tk.LEFT, padx=(6,0))
 
         controls = tk.Frame(main)
         controls.pack(fill=tk.X)
@@ -434,6 +624,15 @@ class TeleopGui:
         tk.Button(orient, text="Look Right", width=14, command=lambda: self._apply_preset("Look Right")).grid(row=3, column=1, pady=4, sticky="w")
         tk.Button(orient, text="Look Left", width=14, command=lambda: self._apply_preset("Look Left")).grid(row=4, column=0, pady=4, sticky="w")
         tk.Button(orient, text="Apply RPY", width=14, command=self._apply_rpy).grid(row=4, column=1, pady=4, sticky="w")
+
+        # Reference rotation controls: axis selector + custom degrees
+        tk.Label(orient, text="Axis").grid(row=5, column=2, sticky="w")
+        self.axis_var = tk.StringVar(value="Z")
+        tk.OptionMenu(orient, self.axis_var, "X", "Y", "Z").grid(row=5, column=3, sticky="w")
+        tk.Label(orient, text="Degrees").grid(row=6, column=2, sticky="w")
+        self.deg_var = tk.StringVar(value="45")
+        tk.Entry(orient, textvariable=self.deg_var, width=6).grid(row=6, column=3, sticky="w")
+        tk.Button(orient, text="Rotate Ref", width=14, command=self._rotate_ref_custom).grid(row=7, column=2, columnspan=2, pady=4, sticky="w")
 
         tk.Label(orient, text="Roll").grid(row=5, column=0, sticky="w", pady=(8, 0))
         tk.Entry(orient, textvariable=self.roll_var, width=10).grid(row=5, column=1, sticky="w", pady=(8, 0))
@@ -555,6 +754,15 @@ class TeleopGui:
         if None in (roll_deg, pitch_deg, yaw_deg):
             return
         self.node.set_orientation_from_rpy_deg(roll_deg, pitch_deg, yaw_deg)
+
+    def _rotate_ref_custom(self):
+        try:
+            deg = float(self.deg_var.get())
+        except ValueError:
+            self.enqueue_log("error", f"Invalid degrees: {self.deg_var.get()}")
+            return
+        axis = self.axis_var.get()
+        self.node.rotate_reference(axis, deg)
 
     def _apply_gripper_slider(self):
         self.node.set_gripper(self.gripper_var.get())

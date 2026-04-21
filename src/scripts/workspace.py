@@ -189,18 +189,30 @@ class WorkspaceViz(Node):
         self._update_ee_marker()
 
     def _update_ee_marker(self):
+        # Prefer WORLD_FRAME but gracefully fall back to BASE_FRAME if unavailable
+        target_frame = WORLD_FRAME
         try:
-            t = self.tf_buffer.lookup_transform(
-                WORLD_FRAME, EE_LINK,
-                rclpy.time.Time(),
-                timeout=Duration(seconds=0.5),
-            )
+            if self.tf_buffer.can_transform(WORLD_FRAME, EE_LINK, rclpy.time.Time(), timeout=Duration(seconds=0.5)):
+                t = self.tf_buffer.lookup_transform(
+                    WORLD_FRAME, EE_LINK,
+                    rclpy.time.Time(),
+                    timeout=Duration(seconds=0.5),
+                )
+            elif self.tf_buffer.can_transform(BASE_FRAME, EE_LINK, rclpy.time.Time(), timeout=Duration(seconds=0.5)):
+                target_frame = BASE_FRAME
+                t = self.tf_buffer.lookup_transform(
+                    BASE_FRAME, EE_LINK,
+                    rclpy.time.Time(),
+                    timeout=Duration(seconds=0.5),
+                )
+            else:
+                return
             p = t.transform.translation
         except Exception:
             return
 
         m = Marker()
-        m.header.frame_id = WORLD_FRAME
+        m.header.frame_id = target_frame
         m.header.stamp = self.get_clock().now().to_msg()
         m.ns = "ee_current"
         m.id = 0

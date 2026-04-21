@@ -104,6 +104,12 @@ def main() -> int:
             return complete.returncode or 1
 
         spawn_process("teleop", "python3 src/scripts/teleop.py")
+        time.sleep(1.0)
+        # Ensure a 'world' -> 'base_link' static frame exists for TF lookups
+        spawn_process("static_tf", "python3 src/scripts/static_world_to_base.py")
+        time.sleep(0.5)
+        # Start the reference frame broadcaster so ee_ref is available
+        spawn_process("ref_broadcaster", "python3 src/scripts/reference_frame_broadcaster.py")
         time.sleep(2.0)
         spawn_process("workspace", "python3 src/scripts/workspace.py")
 
