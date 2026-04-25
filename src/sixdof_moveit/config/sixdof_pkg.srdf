@@ -21,7 +21,7 @@
         <joint name="joint_5" value="0.0"/>
     </group_state>
     <group_state name="stand" group="arm_controller">
-        <joint name="joint_0" value="1.7903"/>
+        <joint name="joint_0" value="1.5708"/>
         <joint name="joint_1" value="-0.5691"/>
         <joint name="joint_2" value="1.9833"/>
         <joint name="joint_3" value="0.2107"/>

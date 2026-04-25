@@ -60,7 +60,7 @@
     <parent link="base_link" />
     <child link="link_1" />
     <axis xyz="0 0 1" />
-    <limit lower="-0.017" upper="3.159" effort="150.0" velocity="1.0" />
+    <limit lower="-1.5708" upper="1.5708" effort="150.0" velocity="1.0" />
     <dynamics damping="1.5" friction="1.0" />
   </joint>
 

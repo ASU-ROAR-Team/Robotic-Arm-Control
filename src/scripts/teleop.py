@@ -37,6 +37,7 @@ LINK_NAME = "link_6"
 GROUP_NAME = "arm_controller"
 FRAME_ID = "world"
 BASE_FRAME = "base_link"
+SEMANTIC_REFERENCE_FRAME = "link_1"
 HAND_CONTROLLER = "/hand_controller_controller/follow_joint_trajectory"
 JOINT_STATE_TOPIC = "/joint_states_corrected"
 DEFAULT_CM = 1.0
@@ -62,6 +63,70 @@ ORIENTATION_PRESETS_DEG = {
     "Look Up": (7.0, -0.3, -90.0),
     "Look Right": (179.0, -2.0, -90.0),
     "Look Left": (179.0, 2.0, 90.0),
+}
+TOOL_AXIS_VECTORS = {
+    "+X": (1.0, 0.0, 0.0),
+    "-X": (-1.0, 0.0, 0.0),
+    "+Y": (0.0, 1.0, 0.0),
+    "-Y": (0.0, -1.0, 0.0),
+    "+Z": (0.0, 0.0, 1.0),
+    "-Z": (0.0, 0.0, -1.0),
+}
+SEMANTIC_AXIS_TO_LINK1_X = {
+    "Forward": "+Z",
+    "Down": "+Y",
+    "Up": "-Y",
+    "Right": "+X",
+    "Left": "-X",
+    "Backward": "-Z",
+}
+WRIST_JOINT_LIMIT = 1.6581
+WRIST_SEMANTIC_SIDE = math.radians(85.0)
+WRIST_SEMANTIC_PITCH = math.radians(85.0)
+WRIST_SEMANTIC_UP = min(WRIST_JOINT_LIMIT, math.radians(95.0))
+SEMANTIC_WRIST_PROFILES = {
+    "Right": {
+        "strategy": "joint_3-led rightward wrist turn with joint_4 support",
+        "targets": {"joint_3": WRIST_SEMANTIC_SIDE, "joint_4": -WRIST_SEMANTIC_PITCH},
+        "holds": {"joint_5": 0.20},
+        "tolerances": {"joint_3": 0.18, "joint_4": 0.22},
+        "primary_joints": ["joint_3", "joint_4"],
+    },
+    "Left": {
+        "strategy": "joint_3-led leftward wrist turn with joint_4 support",
+        "targets": {"joint_3": -WRIST_SEMANTIC_SIDE, "joint_4": -WRIST_SEMANTIC_PITCH},
+        "holds": {"joint_5": 0.20},
+        "tolerances": {"joint_3": 0.18, "joint_4": 0.22},
+        "primary_joints": ["joint_3", "joint_4"],
+    },
+    "Forward": {
+        "strategy": "joint_4-led eye-level pose with tool +Z along link_1 +X",
+        "targets": {"joint_4": WRIST_SEMANTIC_PITCH},
+        "holds": {"joint_3": 0.30, "joint_5": 0.20},
+        "tolerances": {"joint_4": 0.18},
+        "primary_joints": ["joint_4"],
+    },
+    "Backward": {
+        "strategy": "joint_4-led backward wrist pitch",
+        "targets": {"joint_4": -WRIST_SEMANTIC_PITCH},
+        "holds": {"joint_3": 0.30, "joint_5": 0.20},
+        "tolerances": {"joint_4": 0.18},
+        "primary_joints": ["joint_4"],
+    },
+    "Up": {
+        "strategy": "joint_4-led upward look with joint_5 roll and light joint_3 assist",
+        "targets": {"joint_3": math.radians(45.0), "joint_4": math.radians(-30.0), "joint_5": math.radians(-95.0)},
+        "holds": {},
+        "tolerances": {"joint_3": 0.28, "joint_4": 0.24, "joint_5": 0.18},
+        "primary_joints": ["joint_4", "joint_5"],
+    },
+    "Down": {
+        "strategy": "joint_4-led downward look with tool +Y along link_1 +X",
+        "targets": {"joint_4": 0.0},
+        "holds": {"joint_3": 0.30, "joint_5": 0.20},
+        "tolerances": {"joint_4": 0.16},
+        "primary_joints": ["joint_4"],
+    },
 }
 
 
@@ -106,6 +171,38 @@ def joint_constraint(joint_name: str, position: float, tolerance: float) -> Join
     return constraint
 
 
+def normalize_vector(vector: tuple[float, float, float]) -> tuple[float, float, float]:
+    x, y, z = vector
+    magnitude = math.sqrt(x * x + y * y + z * z)
+    if magnitude < 1e-9:
+        return (0.0, 0.0, 0.0)
+    return (x / magnitude, y / magnitude, z / magnitude)
+
+
+def closest_semantic_direction(vector: tuple[float, float, float]) -> tuple[str | None, float, tuple[float, float, float]]:
+    unit = normalize_vector(vector)
+    best_name = None
+    best_score = -1.0
+    for name, axis_name in SEMANTIC_AXIS_TO_LINK1_X.items():
+        axis = TOOL_AXIS_VECTORS[axis_name]
+        score = unit[0] * axis[0] + unit[1] * axis[1] + unit[2] * axis[2]
+        if score > best_score:
+            best_name = name
+            best_score = score
+    return best_name, best_score, unit
+
+
+def semantic_name_for_axis(axis_name: str) -> str | None:
+    for semantic, mapped_axis in SEMANTIC_AXIS_TO_LINK1_X.items():
+        if mapped_axis == axis_name:
+            return semantic
+    return None
+
+
+def clamp_value(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
 class Teleop(Node):
     def __init__(self, log_callback=None):
         super().__init__("sixdof_pose_teleop")
@@ -122,6 +219,7 @@ class Teleop(Node):
         self.maintain_orientation = True
         self.target_orientation = quat_from_euler(0.0, 0.0, 0.0)
         self.target_orientation_rpy_deg = [0.0, 0.0, 0.0]
+        self.last_semantic_strategy = "none"
         self.create_subscription(JointState, JOINT_STATE_TOPIC, self._js, 10)
         # Reference frame (can be changed at runtime)
         self.reference_frame = FRAME_ID
@@ -292,6 +390,167 @@ class Teleop(Node):
         rz = iz * w + iw * -z + ix * -y - iy * -x
         return (rx, ry, rz)
 
+    def _quat_mult(self, q1, q2):
+        # multiply q1 * q2, quaternions as (x,y,z,w)
+        x1, y1, z1, w1 = q1
+        x2, y2, z2, w2 = q2
+        qw = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        qx = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+        qy = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+        qz = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+        return (qx, qy, qz, qw)
+
+    def _quat_from_two_vectors(self, v_from, v_to):
+        # return quaternion rotating v_from -> v_to (shortest arc), as (x,y,z,w)
+        fx, fy, fz = v_from
+        tx, ty, tz = v_to
+        # normalize
+        fmag = math.sqrt(fx * fx + fy * fy + fz * fz)
+        tmag = math.sqrt(tx * tx + ty * ty + tz * tz)
+        if fmag < 1e-9 or tmag < 1e-9:
+            return (0.0, 0.0, 0.0, 1.0)
+        v1 = (fx / fmag, fy / fmag, fz / fmag)
+        v2 = (tx / tmag, ty / tmag, tz / tmag)
+        dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2]
+        if dot >= 1.0 - 1e-12:
+            return (0.0, 0.0, 0.0, 1.0)
+        if dot <= -1.0 + 1e-12:
+            # 180 degree rotation: pick an orthogonal axis
+            # find axis orthogonal to v_from
+            if abs(v1[0]) < abs(v1[1]):
+                ort = (1.0, 0.0, 0.0)
+            else:
+                ort = (0.0, 1.0, 0.0)
+            # cross product
+            cx = v1[1] * ort[2] - v1[2] * ort[1]
+            cy = v1[2] * ort[0] - v1[0] * ort[2]
+            cz = v1[0] * ort[1] - v1[1] * ort[0]
+            mag = math.sqrt(cx * cx + cy * cy + cz * cz)
+            if mag < 1e-9:
+                return (0.0, 0.0, 0.0, 1.0)
+            sx, sy, sz = cx / mag, cy / mag, cz / mag
+            return (sx, sy, sz, 0.0)
+        # standard case
+        cx = v1[1] * v2[2] - v1[2] * v2[1]
+        cy = v1[2] * v2[0] - v1[0] * v2[2]
+        cz = v1[0] * v2[1] - v1[1] * v2[0]
+        s = math.sqrt((1.0 + dot) * 2.0)
+        invs = 1.0 / s
+        qx = cx * invs
+        qy = cy * invs
+        qz = cz * invs
+        qw = 0.5 * s
+        return (qx, qy, qz, qw)
+
+    def _semantic_joint_constraints(self, semantic: str) -> tuple[list[JointConstraint], dict[str, float], str]:
+        profile = SEMANTIC_WRIST_PROFILES[semantic]
+        constraints: list[JointConstraint] = []
+        planned_targets: dict[str, float] = {}
+
+        for joint_name, target in profile["targets"].items():
+            clamped_target = clamp_value(target, -WRIST_JOINT_LIMIT, WRIST_JOINT_LIMIT)
+            planned_targets[joint_name] = clamped_target
+            tolerance = profile["tolerances"].get(joint_name, 0.20)
+            constraints.append(joint_constraint(joint_name, clamped_target, tolerance))
+
+        for joint_name, tolerance in profile.get("holds", {}).items():
+            if joint_name in planned_targets or joint_name not in self.joints:
+                continue
+            planned_targets[joint_name] = self.joints[joint_name]
+            constraints.append(joint_constraint(joint_name, self.joints[joint_name], tolerance))
+
+        return constraints, planned_targets, profile["strategy"]
+
+    def _semantic_alignment_state(self):
+        transform = self._tf_transform(SEMANTIC_REFERENCE_FRAME, LINK_NAME)
+        if transform is None:
+            return None
+
+        q = (transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
+        axis_vectors = {
+            axis_name: normalize_vector(self._rotate_vector(q, axis_vector))
+            for axis_name, axis_vector in TOOL_AXIS_VECTORS.items()
+        }
+
+        best_axis_name = None
+        best_axis_vector = (0.0, 0.0, 0.0)
+        best_score = -1.0
+        for axis_name in ["+Z", "+Y", "-Y", "+X", "-X", "-Z"]:
+            score = axis_vectors[axis_name][0]
+            if score > best_score:
+                best_axis_name = axis_name
+                best_axis_vector = axis_vectors[axis_name]
+                best_score = score
+
+        semantic = semantic_name_for_axis(best_axis_name) if best_axis_name is not None else None
+
+        # Assume the camera's visible top/slot side corresponds to tool +Y.
+        # Positive link_1 +Z means upright, negative means upside-down.
+        upright_score = axis_vectors["+Y"][2]
+        if upright_score > 0.25:
+            upright_state = "upright"
+        elif upright_score < -0.25:
+            upright_state = "upside-down"
+        else:
+            upright_state = "sideways"
+
+        return {
+            "semantic": semantic,
+            "axis_name": best_axis_name,
+            "axis_vector": best_axis_vector,
+            "score": best_score,
+            "upright_state": upright_state,
+            "upright_score": upright_score,
+            "axis_vectors": axis_vectors,
+        }
+
+    # Historical name kept for GUI/call-site compatibility. The semantic layer
+    # now classifies whichever tool axis should align with link_1 +X instead of
+    # assuming every command is only about tool +Z.
+    def align_link6_z_to_semantic(self, semantic: str, send_goal: bool = True):
+        if semantic not in SEMANTIC_WRIST_PROFILES:
+            self._log('error', f'Unknown semantic direction: {semantic}')
+            return False
+
+        # get current transform of LINK_NAME in reference_frame
+        transform = self._tf_transform(self.reference_frame, LINK_NAME)
+        if transform is None:
+            self._log('error', 'No transform available to align LINK_6')
+            return False
+
+        alignment = self._semantic_alignment_state()
+        if alignment is None:
+            self._log('error', f'No {SEMANTIC_REFERENCE_FRAME}->{LINK_NAME} transform available for semantic alignment')
+            return False
+
+        semantic_constraints, planned_targets, strategy = self._semantic_joint_constraints(semantic)
+        planned_joint_text = ", ".join(
+            f"{joint_name}={math.degrees(value):+.1f} deg" for joint_name, value in planned_targets.items()
+        )
+        self.last_semantic_strategy = f"{semantic}: {strategy} [{planned_joint_text}]"
+        self._log(
+            'info',
+            'Semantic wrist strategy: '
+            f'semantic_reference={SEMANTIC_REFERENCE_FRAME} +X, semantic={semantic}, '
+            f'desired_axis={SEMANTIC_AXIS_TO_LINK1_X[semantic]} -> {SEMANTIC_REFERENCE_FRAME} +X, '
+            f'current_alignment={alignment["semantic"]} via tool {alignment["axis_name"]} '
+            f'[{alignment["axis_vector"][0]:+.3f}, {alignment["axis_vector"][1]:+.3f}, {alignment["axis_vector"][2]:+.3f}] '
+            f'(score={alignment["score"]:.3f}, camera={alignment["upright_state"]}), '
+            f'strategy={strategy}, planned_joints={planned_joint_text}'
+        )
+        if send_goal:
+            constraints = Constraints()
+            constraints.position_constraints.append(
+                self._position_constraint(transform.translation.x, transform.translation.y, transform.translation.z)
+            )
+            constraints.joint_constraints.extend(semantic_constraints)
+            self._log(
+                'info',
+                f'Sending semantic wrist goal for {semantic}: primary_joints={SEMANTIC_WRIST_PROFILES[semantic]["primary_joints"]}'
+            )
+            self._send_constraints(constraints, prefer_distal_joints=True)
+        return True
+
     def capture_current_orientation(self) -> bool:
         # Capture orientation of the end-effector expressed in the current reference frame
         transform = self._tf_transform(self.reference_frame, LINK_NAME)
@@ -317,6 +576,7 @@ class Teleop(Node):
             math.radians(pitch_deg),
             math.radians(yaw_deg),
         )
+        self.last_semantic_strategy = "none"
         self._log(
             "info",
             f"Orientation target set -> roll={roll_deg:.1f} deg, pitch={pitch_deg:.1f} deg, yaw={yaw_deg:.1f} deg",
@@ -366,10 +626,12 @@ class Teleop(Node):
             f"pitch={self.target_orientation_rpy_deg[1]:.1f} deg, "
             f"yaw={self.target_orientation_rpy_deg[2]:.1f} deg"
         )
+        lines.append(f"Semantic strategy: {self.last_semantic_strategy}")
+        lines.append(f"Semantic reference: {SEMANTIC_REFERENCE_FRAME} +X")
         world_transform = self._tf_transform(self.reference_frame, LINK_NAME)
         if world_transform is not None:
             position = world_transform.translation
-            lines.append(f"EE world: x={position.x:.4f} y={position.y:.4f} z={position.z:.4f}")
+            lines.append(f"EE pose ({self.reference_frame}): x={position.x:.4f} y={position.y:.4f} z={position.z:.4f}")
             roll, pitch, yaw = euler_from_quat(
                 world_transform.rotation.x,
                 world_transform.rotation.y,
@@ -380,6 +642,23 @@ class Teleop(Node):
                 "EE orientation: "
                 f"roll={math.degrees(roll):.1f} deg, pitch={math.degrees(pitch):.1f} deg, yaw={math.degrees(yaw):.1f} deg"
             )
+        alignment = self._semantic_alignment_state()
+        if alignment is not None:
+            lines.append(
+                f"Semantic alignment: {alignment['semantic']} via tool {alignment['axis_name']} -> {SEMANTIC_REFERENCE_FRAME} +X "
+                f"[{alignment['axis_vector'][0]:+.3f}, {alignment['axis_vector'][1]:+.3f}, {alignment['axis_vector'][2]:+.3f}] "
+                f"(score {alignment['score']:.3f})"
+            )
+            lines.append(
+                f"Camera upright note: {alignment['upright_state']} "
+                f"(tool +Y vs {SEMANTIC_REFERENCE_FRAME} +Z score {alignment['upright_score']:+.3f})"
+            )
+            for axis_name in ["+X", "+Y", "+Z"]:
+                axis_vector = alignment['axis_vectors'][axis_name]
+                lines.append(
+                    f"Tool {axis_name} (in {SEMANTIC_REFERENCE_FRAME}): "
+                    f"[{axis_vector[0]:+.3f}, {axis_vector[1]:+.3f}, {axis_vector[2]:+.3f}]"
+                )
         return "\n".join(lines)
 
     def print_status(self):
@@ -440,7 +719,12 @@ class Teleop(Node):
         if transform is None:
             return
         self._log("info", "Applying orientation target at current position")
-        self._send_pose_goal(transform.translation.x, transform.translation.y, transform.translation.z)
+        self._send_pose_goal(
+            transform.translation.x,
+            transform.translation.y,
+            transform.translation.z,
+            force_orientation=True,
+        )
 
     def go_home(self):
         if not self.done.is_set():
@@ -490,28 +774,59 @@ class Teleop(Node):
         self._log("info", "Gripper command done.")
         self.hand_done.set()
 
-    def _send_pose_goal(self, x: float, y: float, z: float):
+    def _send_pose_goal(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        prefer_distal_joints: bool = False,
+        force_orientation: bool = False,
+    ):
         if not self.done.is_set():
             self._log("warn", "Still executing.")
             return
         self.done.clear()
         constraints = Constraints()
         constraints.position_constraints.append(self._position_constraint(x, y, z))
-        if self.maintain_orientation:
+        # Explicit orientation commands must still constrain orientation even if
+        # free-orientation jogging mode is enabled.
+        if self.maintain_orientation or force_orientation:
             constraints.orientation_constraints.append(self._orientation_constraint())
-        self._send_constraints(constraints)
+        # attach joint preference hint if requested
+        self._send_constraints(constraints, prefer_distal_joints=prefer_distal_joints)
 
-    def _send_constraints(self, constraints: Constraints):
+    def _send_constraints(self, constraints: Constraints, prefer_distal_joints: bool = False):
+        explicit_joint_names = {jc.joint_name for jc in constraints.joint_constraints}
         # Debug: log constraint frames and basic info
         try:
             frame_info = []
+            orientation_included = bool(constraints.orientation_constraints)
             for pc in constraints.position_constraints:
                 frame_info.append(f"pos(frame={pc.header.frame_id})")
             for oc in constraints.orientation_constraints:
                 frame_info.append(f"orient(frame={oc.header.frame_id})")
+            if explicit_joint_names:
+                frame_info.append("joints=" + ",".join(sorted(explicit_joint_names)))
+            frame_info.append(f"orientation={'on' if orientation_included else 'off'}")
+            if prefer_distal_joints:
+                frame_info.append("joint_bias=distal")
             self._log("info", "Sending goal with constraints: " + ", ".join(frame_info))
         except Exception:
             pass
+        # If requested, add joint constraints that prefer moving distal joints first
+        if prefer_distal_joints:
+            # tolerance mapping from joint index -> allowed movement (rad)
+            # larger tolerance => planner may move that joint more easily
+            tol_map = {5: 0.6, 4: 0.45, 3: 0.3, 2: 0.15, 1: 0.07, 0: 0.03}
+            # add joint constraints based on current joint positions
+            for name in DISPLAY_JOINTS:
+                if name in explicit_joint_names:
+                    continue
+                if name in self.joints:
+                    idx = int(name.split('_')[-1])
+                    tol = tol_map.get(idx, 0.05)
+                    jc = joint_constraint(name, self.joints[name], tol)
+                    constraints.joint_constraints.append(jc)
         goal = MoveGroup.Goal()
         goal.request.group_name = GROUP_NAME
         goal.request.allowed_planning_time = 5.0
@@ -601,10 +916,10 @@ class TeleopGui:
         xyz.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
         tk.Label(xyz, text="Step").grid(row=0, column=0, sticky="w")
         tk.Entry(xyz, textvariable=self.xyz_step_var, width=8).grid(row=0, column=1, sticky="w")
-        tk.Button(xyz, text="+X", width=8, command=lambda: self._move_xyz(+1, 0, 0, "+X forward")).grid(row=1, column=1, pady=4)
-        tk.Button(xyz, text="-X", width=8, command=lambda: self._move_xyz(-1, 0, 0, "-X back")).grid(row=3, column=1, pady=4)
-        tk.Button(xyz, text="+Y", width=8, command=lambda: self._move_xyz(0, +1, 0, "+Y left")).grid(row=2, column=0, padx=4)
-        tk.Button(xyz, text="-Y", width=8, command=lambda: self._move_xyz(0, -1, 0, "-Y right")).grid(row=2, column=2, padx=4)
+        tk.Button(xyz, text="Back", width=8, command=lambda: self._move_xyz(+1, 0, 0, "Back")).grid(row=1, column=1, pady=4)
+        tk.Button(xyz, text="Forward", width=8, command=lambda: self._move_xyz(-1, 0, 0, "Forward")).grid(row=3, column=1, pady=4)
+        tk.Button(xyz, text="Left", width=8, command=lambda: self._move_xyz(0, -1, 0, "Left")).grid(row=2, column=0, padx=4)
+        tk.Button(xyz, text="Right", width=8, command=lambda: self._move_xyz(0, +1, 0, "Right")).grid(row=2, column=2, padx=4)
         tk.Button(xyz, text="+Z", width=8, command=lambda: self._move_xyz(0, 0, +1, "+Z up")).grid(row=1, column=3, padx=(12, 0))
         tk.Button(xyz, text="-Z", width=8, command=lambda: self._move_xyz(0, 0, -1, "-Z down")).grid(row=3, column=3, padx=(12, 0))
 
@@ -707,6 +1022,13 @@ class TeleopGui:
             f"{self.node.target_orientation_rpy_deg[1]:+.1f}, "
             f"{self.node.target_orientation_rpy_deg[2]:+.1f} deg"
         )
+        values.append(f"Semantic strategy: {self.node.last_semantic_strategy}")
+        alignment = self.node._semantic_alignment_state()
+        if alignment is not None:
+            values.append(
+                f"Semantic: {alignment['semantic']} via tool {alignment['axis_name']} -> {SEMANTIC_REFERENCE_FRAME} +X"
+            )
+            values.append(f"Camera: {alignment['upright_state']}")
         self.joint_var.set("\n".join(values))
         self.root.after(250, self._refresh_status)
 
@@ -740,12 +1062,29 @@ class TeleopGui:
             self.enqueue_log("info", "Captured current end-effector orientation into the target fields.")
 
     def _apply_preset(self, preset_name):
-        roll_deg, pitch_deg, yaw_deg = ORIENTATION_PRESETS_DEG[preset_name]
-        self.roll_var.set(f"{roll_deg:.1f}")
-        self.pitch_var.set(f"{pitch_deg:.1f}")
-        self.yaw_var.set(f"{yaw_deg:.1f}")
-        self.node.set_orientation_from_rpy_deg(roll_deg, pitch_deg, yaw_deg)
-        self.enqueue_log("info", f"Applied preset: {preset_name}")
+        # Map GUI presets to semantic directions and use alignment routine
+        semantic_map = {
+            'Look Forward': 'Forward',
+            'Look Down': 'Down',
+            'Look Up': 'Up',
+            'Look Right': 'Right',
+            'Look Left': 'Left',
+        }
+        if preset_name in semantic_map:
+            sem = semantic_map[preset_name]
+            ok = self.node.align_link6_z_to_semantic(sem, send_goal=True)
+            if ok:
+                self.enqueue_log("info", f"Applied semantic preset: {preset_name} -> {sem}")
+            else:
+                self.enqueue_log("error", f"Failed to apply semantic preset: {preset_name}")
+        else:
+            # fallback to original RPY behavior
+            roll_deg, pitch_deg, yaw_deg = ORIENTATION_PRESETS_DEG[preset_name]
+            self.roll_var.set(f"{roll_deg:.1f}")
+            self.pitch_var.set(f"{pitch_deg:.1f}")
+            self.yaw_var.set(f"{yaw_deg:.1f}")
+            self.node.set_orientation_from_rpy_deg(roll_deg, pitch_deg, yaw_deg)
+            self.enqueue_log("info", f"Applied preset: {preset_name}")
 
     def _apply_rpy(self):
         roll_deg = self._parse_float(self.roll_var.get(), "roll")

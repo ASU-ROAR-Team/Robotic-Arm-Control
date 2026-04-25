@@ -24,6 +24,9 @@ KILL_PATTERNS = [
     "ros2 launch sixdof_moveit complete.launch.py",
     "ros2 launch sixdof_pkg gazebo.launch.py",
     "python3 src/scripts/teleop.py",
+    # Keep ee_ref single-owned: a stale broadcaster will keep publishing the
+    # old frame pose and fight with the current teleop-controlled instance.
+    "reference_frame_broadcaster.py",
     "python3 src/scripts/workspace.py",
     "python3 src/scripts/workspace_checker.py",
     "move_group",
@@ -108,7 +111,8 @@ def main() -> int:
         # Ensure a 'world' -> 'base_link' static frame exists for TF lookups
         spawn_process("static_tf", "python3 src/scripts/static_world_to_base.py")
         time.sleep(0.5)
-        # Start the reference frame broadcaster so ee_ref is available
+        # Start the only ee_ref broadcaster after cleanup so teleop updates go
+        # to a single TF authority for the lifetime of this stack.
         spawn_process("ref_broadcaster", "python3 src/scripts/reference_frame_broadcaster.py")
         time.sleep(2.0)
         spawn_process("workspace", "python3 src/scripts/workspace.py")
