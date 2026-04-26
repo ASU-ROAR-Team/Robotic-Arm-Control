@@ -5,6 +5,9 @@ from geometry_msgs.msg import TransformStamped
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 
+BASE_FLOOR_OFFSET_Z = 0.5170493
+
+
 def main():
     rclpy.init()
     node = Node('static_world_to_base')
@@ -16,7 +19,7 @@ def main():
     t.child_frame_id = 'base_link'
     t.transform.translation.x = 0.0
     t.transform.translation.y = 0.0
-    t.transform.translation.z = 0.0
+    t.transform.translation.z = BASE_FLOOR_OFFSET_Z
     t.transform.rotation.x = 0.0
     t.transform.rotation.y = 0.0
     t.transform.rotation.z = 0.0

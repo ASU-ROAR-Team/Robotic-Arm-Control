@@ -11,7 +11,7 @@
   <joint name="world_to_base" type="fixed">
     <parent link="world" />
     <child link="base_link" />
-    <origin xyz="0 0 0" rpy="0 0 0" />
+    <origin xyz="0 0 0.5170493" rpy="0 0 0" />
   </joint>
 
   <link name="base_link">
@@ -56,10 +56,10 @@
     </collision>
   </link>
   <joint name="joint_0" type="revolute">
-    <origin xyz="0 0 0.12313" rpy="0 0 3.1416" />
+    <origin xyz="-0.36681 -0.39666 0.030332" rpy="0 0 -1.5708" />
     <parent link="base_link" />
     <child link="link_1" />
-    <axis xyz="0 0 1" />
+    <axis xyz="0 0 -1" />
     <limit lower="-1.5708" upper="1.5708" effort="150.0" velocity="1.0" />
     <dynamics damping="1.5" friction="1.0" />
   </joint>
