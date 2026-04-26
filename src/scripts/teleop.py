@@ -14,6 +14,8 @@ import argparse
 import math
 import threading
 import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
 from queue import Empty, Queue
 import tkinter as tk
 from tkinter import scrolledtext
@@ -81,53 +83,137 @@ SEMANTIC_AXIS_TO_LINK1_X = {
     "Backward": "-Z",
 }
 WRIST_JOINT_LIMIT = 1.6581
-WRIST_SEMANTIC_SIDE = math.radians(85.0)
-WRIST_SEMANTIC_PITCH = math.radians(85.0)
-WRIST_SEMANTIC_UP = min(WRIST_JOINT_LIMIT, math.radians(95.0))
-SEMANTIC_WRIST_PROFILES = {
-    "Right": {
-        "strategy": "joint_3-led rightward wrist turn with joint_4 support",
-        "targets": {"joint_3": WRIST_SEMANTIC_SIDE, "joint_4": -WRIST_SEMANTIC_PITCH},
-        "holds": {"joint_5": 0.20},
-        "tolerances": {"joint_3": 0.18, "joint_4": 0.22},
-        "primary_joints": ["joint_3", "joint_4"],
+WRIST_SEMANTIC_JOINTS = ("joint_3", "joint_4", "joint_5")
+SEMANTIC_CHAIN_JOINTS = ("joint_1", "joint_2", "joint_3", "joint_4", "joint_5")
+SEMANTIC_PREFIX_LINK = "link_3"
+SEMANTIC_DEFAULT_VERTICAL_MODE = "level"
+SEMANTIC_DEFAULT_HORIZONTAL_MODE = "center"
+SEMANTIC_UPSTREAM_JOINTS = ("joint_0", "joint_1", "joint_2")
+SEMANTIC_STATE_JOINTS = ("joint_3", "joint_4", "joint_5")
+SEMANTIC_SCORE_WEIGHTS = {
+    "changed_primary": 12000.0,
+    "changed_secondary": 3200.0,
+    "state_hold": 450.0,
+    "upright": 160.0,
+    "memory": 220.0,
+    "wrist_motion": 40.0,
+    "upstream_motion": 60.0,
+}
+SEMANTIC_FALLBACK_ALIGNMENT_FLOOR = 0.84
+SEMANTIC_FALLBACK_SECONDARY_FLOOR = 0.58
+SEMANTIC_RELAXED_TOLERANCE_SCALE = 1.5
+SEMANTIC_MAX_GOAL_TOLERANCE = 0.30
+SEMANTIC_MAX_PLANNER_ATTEMPTS = 4
+SEMANTIC_VALIDATION_DELAY_SEC = 0.35
+SEMANTIC_FK_TF_WARN_DEG = 6.0
+SEMANTIC_MEMORY_NEARBY_JOINT_DEG = 8.0
+SEMANTIC_VERTICAL_MODE_LABELS = {
+    "down": "Down",
+    "level": "Level",
+    "up": "Up",
+}
+SEMANTIC_HORIZONTAL_MODE_LABELS = {
+    "left": "Left",
+    "center": "Center",
+    "right": "Right",
+}
+SEMANTIC_COMMAND_TARGETS = {
+    "Forward": {"vertical": "level", "horizontal": "center", "requested_stages": ("vertical", "horizontal")},
+    "Down": {"vertical": "down", "horizontal": None, "requested_stages": ("vertical",)},
+    "Up": {"vertical": "up", "horizontal": None, "requested_stages": ("vertical",)},
+    "Right": {"vertical": None, "horizontal": "right", "requested_stages": ("horizontal",)},
+    "Left": {"vertical": None, "horizontal": "left", "requested_stages": ("horizontal",)},
+}
+SEMANTIC_VERTICAL_PROFILES = {
+    "down": {
+        "joint_4_samples_deg": [-35.0, -20.0, -10.0, 0.0, 10.0, 20.0, 35.0],
+        "primary_axis": "+Y",
+        "primary_target": (1.0, 0.0, 0.0),
+        "secondary_axis": "+X",
+        "secondary_target": (0.0, 1.0, 0.0),
+        "primary_min": 0.93,
+        "secondary_min": 0.72,
+        "goal_tolerance": 0.18,
+        "memory_bias_joint": "joint_4",
     },
-    "Left": {
-        "strategy": "joint_3-led leftward wrist turn with joint_4 support",
-        "targets": {"joint_3": -WRIST_SEMANTIC_SIDE, "joint_4": -WRIST_SEMANTIC_PITCH},
-        "holds": {"joint_5": 0.20},
-        "tolerances": {"joint_3": 0.18, "joint_4": 0.22},
-        "primary_joints": ["joint_3", "joint_4"],
+    "level": {
+        "joint_4_samples_deg": [20.0, 35.0, 50.0, 65.0, 80.0, 90.0, 100.0],
+        "primary_axis": "+Z",
+        "primary_target": (1.0, 0.0, 0.0),
+        "secondary_axis": "+Y",
+        "secondary_target": (0.0, 0.0, 1.0),
+        "primary_min": 0.95,
+        "secondary_min": 0.82,
+        "goal_tolerance": 0.16,
+        "memory_bias_joint": "joint_4",
     },
-    "Forward": {
-        "strategy": "joint_4-led eye-level pose with tool +Z along link_1 +X",
-        "targets": {"joint_4": WRIST_SEMANTIC_PITCH},
-        "holds": {"joint_3": 0.30, "joint_5": 0.20},
-        "tolerances": {"joint_4": 0.18},
-        "primary_joints": ["joint_4"],
-    },
-    "Backward": {
-        "strategy": "joint_4-led backward wrist pitch",
-        "targets": {"joint_4": -WRIST_SEMANTIC_PITCH},
-        "holds": {"joint_3": 0.30, "joint_5": 0.20},
-        "tolerances": {"joint_4": 0.18},
-        "primary_joints": ["joint_4"],
-    },
-    "Up": {
-        "strategy": "joint_4-led upward look with joint_5 roll and light joint_3 assist",
-        "targets": {"joint_3": math.radians(45.0), "joint_4": math.radians(-30.0), "joint_5": math.radians(-95.0)},
-        "holds": {},
-        "tolerances": {"joint_3": 0.28, "joint_4": 0.24, "joint_5": 0.18},
-        "primary_joints": ["joint_4", "joint_5"],
-    },
-    "Down": {
-        "strategy": "joint_4-led downward look with tool +Y along link_1 +X",
-        "targets": {"joint_4": 0.0},
-        "holds": {"joint_3": 0.30, "joint_5": 0.20},
-        "tolerances": {"joint_4": 0.16},
-        "primary_joints": ["joint_4"],
+    "up": {
+        "joint_4_samples_deg": [-95.0, -80.0, -65.0, -50.0, -35.0, -20.0, -5.0],
+        "primary_axis": "-Y",
+        "primary_target": (1.0, 0.0, 0.0),
+        "secondary_axis": "+X",
+        "secondary_target": (0.0, 1.0, 0.0),
+        "primary_min": 0.90,
+        "secondary_min": 0.68,
+        "goal_tolerance": 0.20,
+        "memory_bias_joint": "joint_4",
     },
 }
+SEMANTIC_HORIZONTAL_PROFILES = {
+    "left": {
+        "joint_3_samples_deg": [-95.0, -80.0, -65.0, -50.0, -35.0, -20.0, -5.0],
+        "primary_axis": "-X",
+        "primary_target": (1.0, 0.0, 0.0),
+        "secondary_axis": "+Y",
+        "secondary_target": (0.0, 0.0, 1.0),
+        "primary_min": 0.90,
+        "secondary_min": 0.66,
+        "goal_tolerance": 0.20,
+        "memory_bias_joint": "joint_3",
+    },
+    "center": {
+        "joint_3_samples_deg": [-25.0, -15.0, -5.0, 0.0, 5.0, 15.0, 25.0],
+        "primary_axis": "+X",
+        "primary_target": (0.0, 1.0, 0.0),
+        "secondary_axis": "+Y",
+        "secondary_target": (0.0, 0.0, 1.0),
+        "primary_min": 0.74,
+        "secondary_min": 0.62,
+        "goal_tolerance": 0.16,
+        "memory_bias_joint": "joint_3",
+    },
+    "right": {
+        "joint_3_samples_deg": [5.0, 20.0, 35.0, 50.0, 65.0, 80.0, 95.0],
+        "primary_axis": "+X",
+        "primary_target": (1.0, 0.0, 0.0),
+        "secondary_axis": "+Y",
+        "secondary_target": (0.0, 0.0, 1.0),
+        "primary_min": 0.90,
+        "secondary_min": 0.66,
+        "goal_tolerance": 0.20,
+        "memory_bias_joint": "joint_3",
+    },
+}
+SEMANTIC_JOINT_5_SAMPLES_DEG = [-90.0, -60.0, -35.0, -15.0, 0.0, 15.0, 35.0, 60.0, 90.0]
+SEMANTIC_JOINT_5_SETTLE_DEG = 12.0
+SEMANTIC_STAGE_HOLD_NEARBY_DEG = 10.0
+SEMANTIC_STATE_MATCH_DEG = 7.0
+SEMANTIC_UPSTREAM_TOLERANCES = {
+    "tight": {"joint_0": 0.025, "joint_1": 0.025, "joint_2": 0.03},
+    "relaxed": {"joint_0": 0.06, "joint_1": 0.04, "joint_2": 0.05},
+    "helper": {"joint_0": 0.16, "joint_1": 0.05, "joint_2": 0.06},
+}
+SEMANTIC_JOINT_LIMIT_FALLBACKS = {
+    "joint_1": (-2.635, 0.017),
+    "joint_2": (-0.017, 3.159),
+    "joint_3": (-WRIST_JOINT_LIMIT, WRIST_JOINT_LIMIT),
+    "joint_4": (-WRIST_JOINT_LIMIT, WRIST_JOINT_LIMIT),
+    "joint_5": (-WRIST_JOINT_LIMIT, WRIST_JOINT_LIMIT),
+}
+SEMANTIC_URDF_CANDIDATES = (
+    Path(__file__).resolve().parents[1] / "sixdof_pkg" / "urdf" / "roar.urdf",
+    Path(__file__).resolve().parents[1] / "sixdof_moveit" / "config" / "sixdof_pkg.urdf.xacro",
+)
 
 
 def quat_from_euler(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
@@ -142,6 +228,18 @@ def quat_from_euler(roll: float, pitch: float, yaw: float) -> tuple[float, float
     qy = cr * sp * cy + sr * cp * sy
     qz = cr * cp * sy - sr * sp * cy
     return qx, qy, qz, qw
+
+
+def quat_from_axis_angle(axis: tuple[float, float, float], angle: float) -> tuple[float, float, float, float]:
+    axis = normalize_vector(axis)
+    half_angle = angle * 0.5
+    sin_half = math.sin(half_angle)
+    return (
+        axis[0] * sin_half,
+        axis[1] * sin_half,
+        axis[2] * sin_half,
+        math.cos(half_angle),
+    )
 
 
 def euler_from_quat(qx: float, qy: float, qz: float, qw: float) -> tuple[float, float, float]:
@@ -177,6 +275,15 @@ def normalize_vector(vector: tuple[float, float, float]) -> tuple[float, float, 
     if magnitude < 1e-9:
         return (0.0, 0.0, 0.0)
     return (x / magnitude, y / magnitude, z / magnitude)
+
+
+def parse_xyz_attribute(text: str | None, default: tuple[float, float, float]) -> tuple[float, float, float]:
+    if not text:
+        return default
+    values = [float(part) for part in text.split()]
+    if len(values) != 3:
+        return default
+    return (values[0], values[1], values[2])
 
 
 def closest_semantic_direction(vector: tuple[float, float, float]) -> tuple[str | None, float, tuple[float, float, float]]:
@@ -220,6 +327,19 @@ class Teleop(Node):
         self.target_orientation = quat_from_euler(0.0, 0.0, 0.0)
         self.target_orientation_rpy_deg = [0.0, 0.0, 0.0]
         self.last_semantic_strategy = "none"
+        self.last_semantic_validation = "none"
+        self.last_semantic_skip = "none"
+        self.semantic_state = {
+            "vertical_mode": None,
+            "horizontal_mode": None,
+            "last_successful_state": None,
+            "last_successful_candidate": None,
+            "last_successful_validation": "none",
+            "last_requested_command": "none",
+            "seed_source": "uninitialized",
+        }
+        self._semantic_validation_timer = None
+        self._active_goal_context = None
         self.create_subscription(JointState, JOINT_STATE_TOPIC, self._js, 10)
         # Reference frame (can be changed at runtime)
         self.reference_frame = FRAME_ID
@@ -227,6 +347,13 @@ class Teleop(Node):
         self._ref_capture_timer = None
         # Publisher to request reference frame pose changes
         self._ref_pose_pub = self.create_publisher(PoseStamped, '/ee_reference_pose', 10)
+        self._semantic_model = self._load_semantic_kinematic_model()
+        if self._semantic_model is not None:
+            self._log(
+                "info",
+                f"Semantic kinematic model loaded from {self._semantic_model['urdf_path']} "
+                f"using prefix {SEMANTIC_REFERENCE_FRAME}->{self._semantic_model['prefix_link']}",
+            )
 
     def _log(self, level, text):
         logger = self.get_logger()
@@ -400,6 +527,17 @@ class Teleop(Node):
         qz = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
         return (qx, qy, qz, qw)
 
+    def _quat_conjugate(self, q):
+        x, y, z, w = q
+        return (-x, -y, -z, w)
+
+    def _normalize_quat(self, q):
+        x, y, z, w = q
+        magnitude = math.sqrt(x * x + y * y + z * z + w * w)
+        if magnitude < 1e-9:
+            return (0.0, 0.0, 0.0, 1.0)
+        return (x / magnitude, y / magnitude, z / magnitude, w / magnitude)
+
     def _quat_from_two_vectors(self, v_from, v_to):
         # return quaternion rotating v_from -> v_to (shortest arc), as (x,y,z,w)
         fx, fy, fz = v_from
@@ -442,31 +580,171 @@ class Teleop(Node):
         qw = 0.5 * s
         return (qx, qy, qz, qw)
 
-    def _semantic_joint_constraints(self, semantic: str) -> tuple[list[JointConstraint], dict[str, float], str]:
-        profile = SEMANTIC_WRIST_PROFILES[semantic]
-        constraints: list[JointConstraint] = []
-        planned_targets: dict[str, float] = {}
-
-        for joint_name, target in profile["targets"].items():
-            clamped_target = clamp_value(target, -WRIST_JOINT_LIMIT, WRIST_JOINT_LIMIT)
-            planned_targets[joint_name] = clamped_target
-            tolerance = profile["tolerances"].get(joint_name, 0.20)
-            constraints.append(joint_constraint(joint_name, clamped_target, tolerance))
-
-        for joint_name, tolerance in profile.get("holds", {}).items():
-            if joint_name in planned_targets or joint_name not in self.joints:
+    def _load_semantic_kinematic_model(self):
+        last_error = None
+        for urdf_path in SEMANTIC_URDF_CANDIDATES:
+            if not urdf_path.exists():
                 continue
-            planned_targets[joint_name] = self.joints[joint_name]
-            constraints.append(joint_constraint(joint_name, self.joints[joint_name], tolerance))
+            try:
+                root = ET.parse(urdf_path).getroot()
+                joints: dict[str, dict[str, object]] = {}
+                for joint_element in root.findall("joint"):
+                    joint_name = joint_element.attrib.get("name")
+                    if joint_name is None:
+                        continue
+                    parent_element = joint_element.find("parent")
+                    child_element = joint_element.find("child")
+                    origin_element = joint_element.find("origin")
+                    axis_element = joint_element.find("axis")
+                    limit_element = joint_element.find("limit")
+                    origin_xyz = parse_xyz_attribute(
+                        origin_element.attrib.get("xyz") if origin_element is not None else None,
+                        (0.0, 0.0, 0.0),
+                    )
+                    origin_rpy = parse_xyz_attribute(
+                        origin_element.attrib.get("rpy") if origin_element is not None else None,
+                        (0.0, 0.0, 0.0),
+                    )
+                    lower = None
+                    upper = None
+                    if limit_element is not None:
+                        lower_text = limit_element.attrib.get("lower")
+                        upper_text = limit_element.attrib.get("upper")
+                        lower = float(lower_text) if lower_text is not None else None
+                        upper = float(upper_text) if upper_text is not None else None
+                    joints[joint_name] = {
+                        "type": joint_element.attrib.get("type", "fixed"),
+                        "parent": parent_element.attrib.get("link") if parent_element is not None else None,
+                        "child": child_element.attrib.get("link") if child_element is not None else None,
+                        "origin_xyz": origin_xyz,
+                        "origin_rpy": origin_rpy,
+                        "origin_quat": quat_from_euler(*origin_rpy),
+                        "axis": normalize_vector(
+                            parse_xyz_attribute(
+                                axis_element.attrib.get("xyz") if axis_element is not None else None,
+                                (1.0, 0.0, 0.0),
+                            )
+                        ),
+                        "limits": (lower, upper),
+                    }
+                missing = [joint_name for joint_name in SEMANTIC_CHAIN_JOINTS if joint_name not in joints]
+                if missing:
+                    raise ValueError("missing joints: " + ", ".join(missing))
+                return {
+                    "urdf_path": str(urdf_path),
+                    "joints": joints,
+                    "prefix_link": joints["joint_3"]["parent"],
+                }
+            except Exception as exc:
+                last_error = f"{urdf_path}: {exc}"
+        if last_error is not None:
+            self._log("warn", f"Semantic URDF model unavailable: {last_error}")
+        else:
+            self._log("warn", "Semantic URDF model unavailable: no candidate URDF path found")
+        return None
 
-        return constraints, planned_targets, profile["strategy"]
+    def _semantic_joint_limit(self, joint_name: str) -> tuple[float, float]:
+        if self._semantic_model is not None:
+            joint_limits = self._semantic_model["joints"][joint_name]["limits"]
+            lower = joint_limits[0]
+            upper = joint_limits[1]
+            if lower is not None and upper is not None:
+                return (float(lower), float(upper))
+        return SEMANTIC_JOINT_LIMIT_FALLBACKS.get(joint_name, (-WRIST_JOINT_LIMIT, WRIST_JOINT_LIMIT))
 
-    def _semantic_alignment_state(self):
-        transform = self._tf_transform(SEMANTIC_REFERENCE_FRAME, LINK_NAME)
-        if transform is None:
+    def _semantic_joint_state_snapshot(self, joint_names: tuple[str, ...]) -> tuple[dict[str, float], list[str]]:
+        snapshot: dict[str, float] = {}
+        missing: list[str] = []
+        for joint_name in joint_names:
+            low, high = self._semantic_joint_limit(joint_name)
+            if joint_name not in self.joints:
+                missing.append(joint_name)
+            snapshot[joint_name] = clamp_value(self.joints.get(joint_name, 0.0), low, high)
+        return snapshot, missing
+
+    def _semantic_transform_quaternion(self, transform) -> tuple[float, float, float, float]:
+        return self._normalize_quat(
+            (transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
+        )
+
+    def _semantic_chain_quaternion(
+        self,
+        joint_values: dict[str, float],
+        joint_names: tuple[str, ...],
+        initial_q: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
+    ) -> tuple[float, float, float, float] | None:
+        if self._semantic_model is None:
+            return None
+        q = self._normalize_quat(initial_q)
+        for joint_name in joint_names:
+            joint_model = self._semantic_model["joints"][joint_name]
+            # URDF joint convention: parent->child orientation is the fixed
+            # joint-origin rotation followed by rotation about the joint axis
+            # expressed in that joint frame.
+            q = self._quat_mult(q, joint_model["origin_quat"])
+            if joint_model["type"] != "fixed":
+                q = self._quat_mult(q, quat_from_axis_angle(joint_model["axis"], joint_values.get(joint_name, 0.0)))
+        return self._normalize_quat(q)
+
+    def _semantic_quat_angle_deg(self, q1, q2) -> float:
+        relative = self._normalize_quat(self._quat_mult(self._quat_conjugate(q1), q2))
+        return math.degrees(2.0 * math.acos(clamp_value(abs(relative[3]), -1.0, 1.0)))
+
+    def _semantic_prediction_context(self):
+        if self._semantic_model is None:
             return None
 
-        q = (transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
+        wrist_state, missing_wrist = self._semantic_joint_state_snapshot(WRIST_SEMANTIC_JOINTS)
+        full_chain_state, missing_chain = self._semantic_joint_state_snapshot(SEMANTIC_CHAIN_JOINTS)
+        prefix_link = self._semantic_model["prefix_link"]
+        prefix_transform = self._tf_transform(SEMANTIC_REFERENCE_FRAME, prefix_link)
+        if prefix_transform is not None:
+            # This keeps the upstream chain grounded in the live robot/TF state
+            # and only models the semantic wrist subchain locally.
+            prefix_q = self._semantic_transform_quaternion(prefix_transform)
+            current_model_q = self._semantic_chain_quaternion(wrist_state, WRIST_SEMANTIC_JOINTS, initial_q=prefix_q)
+            return {
+                "mode": "tf_prefix_subchain_fk",
+                "source": (
+                    f"actual TF {SEMANTIC_REFERENCE_FRAME}->{prefix_link} "
+                    f"+ URDF FK over {', '.join(WRIST_SEMANTIC_JOINTS)}"
+                ),
+                "prefix_link": prefix_link,
+                "prefix_q": prefix_q,
+                "current_model_q": current_model_q,
+                "current_wrist_state": wrist_state,
+                "full_chain_state": full_chain_state,
+                "missing_joint_states": missing_wrist,
+            }
+
+        current_model_q = self._semantic_chain_quaternion(full_chain_state, SEMANTIC_CHAIN_JOINTS)
+        return {
+            "mode": "joint_state_full_fk",
+            "source": f"joint-state URDF FK over {', '.join(SEMANTIC_CHAIN_JOINTS)}",
+            "prefix_link": None,
+            "prefix_q": None,
+            "current_model_q": current_model_q,
+            "current_wrist_state": wrist_state,
+            "full_chain_state": full_chain_state,
+            "missing_joint_states": missing_chain,
+        }
+
+    def _semantic_predict_candidate_quaternion(self, candidate: dict[str, float], context):
+        if context["mode"] == "tf_prefix_subchain_fk":
+            return self._semantic_chain_quaternion(candidate, WRIST_SEMANTIC_JOINTS, initial_q=context["prefix_q"])
+        joint_values = dict(context["full_chain_state"])
+        joint_values.update(candidate)
+        return self._semantic_chain_quaternion(joint_values, SEMANTIC_CHAIN_JOINTS)
+
+    def _semantic_sample_summary(self, samples: dict[str, list[float]]) -> str:
+        parts = []
+        for joint_name in WRIST_SEMANTIC_JOINTS:
+            degrees = ", ".join(f"{math.degrees(value):+.1f}" for value in samples[joint_name])
+            parts.append(f"{joint_name}_deg=[{degrees}]")
+        return "; ".join(parts)
+
+    def _semantic_alignment_from_quaternion(self, q):
+        q = self._normalize_quat(q)
         axis_vectors = {
             axis_name: normalize_vector(self._rotate_vector(q, axis_vector))
             for axis_name, axis_vector in TOOL_AXIS_VECTORS.items()
@@ -504,52 +782,712 @@ class Teleop(Node):
             "axis_vectors": axis_vectors,
         }
 
+    def _semantic_alignment_state(self):
+        transform = self._tf_transform(SEMANTIC_REFERENCE_FRAME, LINK_NAME)
+        if transform is None:
+            return None
+        q = self._semantic_transform_quaternion(transform)
+        return self._semantic_alignment_from_quaternion(q)
+
+    def _semantic_mode_label(self, stage: str, mode: str | None) -> str:
+        if mode is None:
+            return "unknown"
+        labels = SEMANTIC_VERTICAL_MODE_LABELS if stage == "vertical" else SEMANTIC_HORIZONTAL_MODE_LABELS
+        return labels.get(mode, mode)
+
+    def _semantic_stage_description(self, target_state: dict) -> str:
+        changed = target_state["changed_stages"]
+        if not changed:
+            return "none"
+        if len(changed) == 2:
+            return "stage1+stage2"
+        return "stage1" if changed[0] == "vertical" else "stage2"
+
+    def _semantic_axis_score(self, axis_vectors: dict[str, tuple[float, float, float]], axis_name: str, target_vector) -> float:
+        vector = axis_vectors[axis_name]
+        target = normalize_vector(target_vector)
+        return vector[0] * target[0] + vector[1] * target[1] + vector[2] * target[2]
+
+    def _semantic_stage_metrics(self, alignment: dict, stage: str, mode: str) -> dict:
+        profiles = SEMANTIC_VERTICAL_PROFILES if stage == "vertical" else SEMANTIC_HORIZONTAL_PROFILES
+        profile = profiles[mode]
+        axis_vectors = alignment["axis_vectors"]
+        primary = self._semantic_axis_score(axis_vectors, profile["primary_axis"], profile["primary_target"])
+        secondary = self._semantic_axis_score(axis_vectors, profile["secondary_axis"], profile["secondary_target"])
+        return {
+            "mode": mode,
+            "primary": primary,
+            "secondary": secondary,
+            "primary_min": profile["primary_min"],
+            "secondary_min": profile["secondary_min"],
+            "primary_axis": profile["primary_axis"],
+            "secondary_axis": profile["secondary_axis"],
+        }
+
+    def _semantic_observed_modes(self, alignment: dict) -> dict:
+        vertical_mode = max(
+            SEMANTIC_VERTICAL_PROFILES,
+            key=lambda mode: (
+                self._semantic_stage_metrics(alignment, "vertical", mode)["primary"],
+                self._semantic_stage_metrics(alignment, "vertical", mode)["secondary"],
+            ),
+        )
+        horizontal_mode = max(
+            SEMANTIC_HORIZONTAL_PROFILES,
+            key=lambda mode: (
+                self._semantic_stage_metrics(alignment, "horizontal", mode)["primary"],
+                self._semantic_stage_metrics(alignment, "horizontal", mode)["secondary"],
+            ),
+        )
+        return {"vertical": vertical_mode, "horizontal": horizontal_mode}
+
+    def _semantic_seed_state_if_needed(self, alignment: dict | None = None):
+        if self.semantic_state["vertical_mode"] is not None and self.semantic_state["horizontal_mode"] is not None:
+            return
+        if alignment is None:
+            alignment = self._semantic_alignment_state()
+        if alignment is None:
+            self.semantic_state["vertical_mode"] = SEMANTIC_DEFAULT_VERTICAL_MODE
+            self.semantic_state["horizontal_mode"] = SEMANTIC_DEFAULT_HORIZONTAL_MODE
+            self.semantic_state["seed_source"] = "default semantic state"
+            return
+        observed = self._semantic_observed_modes(alignment)
+        self.semantic_state["vertical_mode"] = observed["vertical"]
+        self.semantic_state["horizontal_mode"] = observed["horizontal"]
+        self.semantic_state["seed_source"] = "observed TF semantic state"
+
+    def _semantic_target_state(self, command: str) -> dict | None:
+        target = SEMANTIC_COMMAND_TARGETS.get(command)
+        if target is None:
+            return None
+        self._semantic_seed_state_if_needed()
+        vertical_mode = target["vertical"] or self.semantic_state["vertical_mode"] or SEMANTIC_DEFAULT_VERTICAL_MODE
+        horizontal_mode = target["horizontal"] or self.semantic_state["horizontal_mode"] or SEMANTIC_DEFAULT_HORIZONTAL_MODE
+        changed_stages = []
+        if vertical_mode != self.semantic_state["vertical_mode"]:
+            changed_stages.append("vertical")
+        if horizontal_mode != self.semantic_state["horizontal_mode"]:
+            changed_stages.append("horizontal")
+        return {
+            "command": command,
+            "vertical": vertical_mode,
+            "horizontal": horizontal_mode,
+            "requested_stages": tuple(target["requested_stages"]),
+            "changed_stages": tuple(changed_stages),
+        }
+
+    def _semantic_memory_seed(self) -> tuple[dict[str, float], dict[str, float], str]:
+        current, _ = self._semantic_joint_state_snapshot(WRIST_SEMANTIC_JOINTS)
+        last_success = self.semantic_state["last_successful_candidate"]
+        if last_success is None:
+            return dict(current), current, "current wrist state"
+        seed = {joint_name: last_success.get(joint_name, current[joint_name]) for joint_name in WRIST_SEMANTIC_JOINTS}
+        return seed, current, "last successful semantic solution"
+
+    def _semantic_collect_samples(
+        self,
+        joint_name: str,
+        anchor_values_deg: list[float],
+        current_value: float,
+        seed_value: float,
+        expanded: bool,
+    ) -> list[float]:
+        unique_values: dict[float, float] = {}
+        low, high = self._semantic_joint_limit(joint_name)
+        nearby_deg = SEMANTIC_STAGE_HOLD_NEARBY_DEG if expanded else (SEMANTIC_STAGE_HOLD_NEARBY_DEG * 0.5)
+        sample_values = list(anchor_values_deg)
+        sample_values.extend(
+            [
+                math.degrees(seed_value),
+                math.degrees(current_value),
+                math.degrees(seed_value + math.radians(nearby_deg)),
+                math.degrees(seed_value - math.radians(nearby_deg)),
+                math.degrees(current_value + math.radians(nearby_deg)),
+                math.degrees(current_value - math.radians(nearby_deg)),
+            ]
+        )
+        for value_deg in sample_values:
+            value = clamp_value(math.radians(value_deg), low, high)
+            unique_values[round(value, 6)] = value
+        return [unique_values[key] for key in sorted(unique_values)]
+
+    def _semantic_candidate_samples(self, target_state: dict, seed_solution: dict[str, float], current: dict[str, float]):
+        requested = set(target_state["requested_stages"])
+        samples = {
+            "joint_3": self._semantic_collect_samples(
+                "joint_3",
+                SEMANTIC_HORIZONTAL_PROFILES[target_state["horizontal"]]["joint_3_samples_deg"],
+                current["joint_3"],
+                seed_solution["joint_3"],
+                "horizontal" in requested,
+            ),
+            "joint_4": self._semantic_collect_samples(
+                "joint_4",
+                SEMANTIC_VERTICAL_PROFILES[target_state["vertical"]]["joint_4_samples_deg"],
+                current["joint_4"],
+                seed_solution["joint_4"],
+                "vertical" in requested,
+            ),
+            "joint_5": self._semantic_collect_samples(
+                "joint_5",
+                SEMANTIC_JOINT_5_SAMPLES_DEG,
+                current["joint_5"],
+                seed_solution["joint_5"],
+                True,
+            ),
+        }
+        return samples
+
+    def _semantic_memory_closeness(self, candidate: dict[str, float], seed_solution: dict[str, float]) -> float:
+        scores = []
+        for joint_name in WRIST_SEMANTIC_JOINTS:
+            low, high = self._semantic_joint_limit(joint_name)
+            span = max(abs(low), abs(high), 1e-6)
+            scores.append(clamp_value(1.0 - abs(candidate[joint_name] - seed_solution[joint_name]) / span, 0.0, 1.0))
+        return sum(scores) / len(scores)
+
+    def _semantic_joint_closeness(self, joint_name: str, candidate_value: float, seed_value: float) -> float:
+        low, high = self._semantic_joint_limit(joint_name)
+        span = max(abs(low), abs(high), 1e-6)
+        return clamp_value(1.0 - abs(candidate_value - seed_value) / span, 0.0, 1.0)
+
+    def _semantic_state_hold_score(self, candidate: dict[str, float], target_state: dict, seed_solution: dict[str, float]) -> float:
+        hold_scores = []
+        if "horizontal" not in target_state["requested_stages"]:
+            hold_scores.append(self._semantic_joint_closeness("joint_3", candidate["joint_3"], seed_solution["joint_3"]))
+        if "vertical" not in target_state["requested_stages"]:
+            hold_scores.append(self._semantic_joint_closeness("joint_4", candidate["joint_4"], seed_solution["joint_4"]))
+        hold_scores.append(
+            clamp_value(
+                1.0 - abs(candidate["joint_5"] - seed_solution["joint_5"]) / max(WRIST_JOINT_LIMIT, 1e-6),
+                0.0,
+                1.0,
+            )
+        )
+        return sum(hold_scores) / len(hold_scores)
+
+    def _semantic_wrist_motion_penalty(self, candidate: dict[str, float], current: dict[str, float]) -> float:
+        motion = 0.0
+        for joint_name in WRIST_SEMANTIC_JOINTS:
+            low, high = self._semantic_joint_limit(joint_name)
+            span = max(abs(low), abs(high), 1e-6)
+            motion += abs(candidate[joint_name] - current[joint_name]) / span
+        return motion / len(WRIST_SEMANTIC_JOINTS)
+
+    def _semantic_validation_metrics(self, target_state: dict, alignment: dict) -> dict:
+        vertical_metrics = self._semantic_stage_metrics(alignment, "vertical", target_state["vertical"])
+        horizontal_metrics = self._semantic_stage_metrics(alignment, "horizontal", target_state["horizontal"])
+        requested = set(target_state["requested_stages"])
+        active_metrics = []
+        if "vertical" in requested:
+            active_metrics.append(vertical_metrics)
+        if "horizontal" in requested:
+            active_metrics.append(horizontal_metrics)
+        if not active_metrics:
+            active_metrics = [vertical_metrics, horizontal_metrics]
+        primary_score = sum(metric["primary"] for metric in active_metrics) / len(active_metrics)
+        secondary_score = sum(metric["secondary"] for metric in active_metrics) / len(active_metrics)
+        return {
+            "vertical": vertical_metrics,
+            "horizontal": horizontal_metrics,
+            "primary_score": primary_score,
+            "secondary_score": secondary_score,
+            "passed": all(
+                metric["primary"] >= metric["primary_min"] and metric["secondary"] >= metric["secondary_min"]
+                for metric in active_metrics
+            ),
+        }
+
+    def _semantic_already_satisfied(self, target_state: dict, alignment: dict | None) -> dict | None:
+        if alignment is None:
+            return None
+        metrics = self._semantic_validation_metrics(target_state, alignment)
+        if not metrics["passed"]:
+            return None
+        seed_solution, current, _ = self._semantic_memory_seed()
+        if self._semantic_memory_closeness(current, seed_solution) < 0.70 and self.semantic_state["last_successful_candidate"] is not None:
+            return None
+        return metrics
+
+    def _semantic_candidate_result(
+        self,
+        candidate: dict[str, float],
+        alignment: dict,
+        target_state: dict,
+        current: dict[str, float],
+        seed_solution: dict[str, float],
+    ) -> dict:
+        validation = self._semantic_validation_metrics(target_state, alignment)
+        requested = set(target_state["requested_stages"])
+        changed_metrics = []
+        if "vertical" in requested:
+            changed_metrics.append(validation["vertical"])
+        if "horizontal" in requested:
+            changed_metrics.append(validation["horizontal"])
+        changed_primary_score = sum(metric["primary"] for metric in changed_metrics) / len(changed_metrics)
+        changed_secondary_score = sum(metric["secondary"] for metric in changed_metrics) / len(changed_metrics)
+        state_hold_score = self._semantic_state_hold_score(candidate, target_state, seed_solution)
+        memory_closeness_score = self._semantic_memory_closeness(candidate, seed_solution)
+        wrist_motion_penalty = self._semantic_wrist_motion_penalty(candidate, current)
+        upstream_motion_penalty = 0.0
+        upright_score = clamp_value((alignment["upright_score"] + 1.0) * 0.5, 0.0, 1.0)
+        total_score = (
+            SEMANTIC_SCORE_WEIGHTS["changed_primary"] * changed_primary_score
+            + SEMANTIC_SCORE_WEIGHTS["changed_secondary"] * changed_secondary_score
+            + SEMANTIC_SCORE_WEIGHTS["state_hold"] * state_hold_score
+            + SEMANTIC_SCORE_WEIGHTS["upright"] * upright_score
+            + SEMANTIC_SCORE_WEIGHTS["memory"] * memory_closeness_score
+            - SEMANTIC_SCORE_WEIGHTS["wrist_motion"] * wrist_motion_penalty
+            - SEMANTIC_SCORE_WEIGHTS["upstream_motion"] * upstream_motion_penalty
+        )
+        accepted = validation["passed"]
+        fallback_ok = (
+            changed_primary_score >= SEMANTIC_FALLBACK_ALIGNMENT_FLOOR
+            and changed_secondary_score >= SEMANTIC_FALLBACK_SECONDARY_FLOOR
+        )
+        return {
+            "candidate": candidate,
+            "alignment": alignment,
+            "validation": validation,
+            "changed_primary_score": changed_primary_score,
+            "changed_secondary_score": changed_secondary_score,
+            "state_hold_score": state_hold_score,
+            "memory_closeness_score": memory_closeness_score,
+            "upright_score": upright_score,
+            "wrist_motion_penalty": wrist_motion_penalty,
+            "upstream_motion_penalty": upstream_motion_penalty,
+            "joint_0_mode": "avoid",
+            "accepted": accepted,
+            "fallback_ok": fallback_ok,
+            "rank_key": (
+                1 if accepted else 0,
+                round(changed_primary_score, 6),
+                round(changed_secondary_score, 6),
+                round(state_hold_score, 6),
+                round(memory_closeness_score, 6),
+                round(upright_score, 6),
+                -round(wrist_motion_penalty, 6),
+            ),
+            "total_score": total_score,
+        }
+
+    def _semantic_goal_constraints(
+        self,
+        target_state: dict,
+        candidate: dict[str, float],
+        tolerance_scale: float = 1.0,
+    ) -> list[JointConstraint]:
+        joint_tolerances = {
+            "joint_3": 0.10,
+            "joint_4": 0.10,
+            "joint_5": 0.22,
+        }
+        if "horizontal" in target_state["requested_stages"]:
+            joint_tolerances["joint_3"] = SEMANTIC_HORIZONTAL_PROFILES[target_state["horizontal"]]["goal_tolerance"]
+        if "vertical" in target_state["requested_stages"]:
+            joint_tolerances["joint_4"] = SEMANTIC_VERTICAL_PROFILES[target_state["vertical"]]["goal_tolerance"]
+        constraints: list[JointConstraint] = []
+        for joint_name in WRIST_SEMANTIC_JOINTS:
+            tolerance = min(joint_tolerances[joint_name] * tolerance_scale, SEMANTIC_MAX_GOAL_TOLERANCE)
+            constraints.append(joint_constraint(joint_name, candidate[joint_name], tolerance))
+        return constraints
+
+    def _semantic_upstream_hold_constraints(self, helper_mode: str) -> list[JointConstraint]:
+        constraints: list[JointConstraint] = []
+        tolerances = SEMANTIC_UPSTREAM_TOLERANCES[helper_mode]
+        for joint_name in SEMANTIC_UPSTREAM_JOINTS:
+            current_value = self.joints.get(joint_name, 0.0)
+            constraints.append(joint_constraint(joint_name, current_value, tolerances[joint_name]))
+        return constraints
+
+    def _semantic_candidate_search(self, target_state: dict):
+        if self._semantic_model is None:
+            return None
+
+        current_transform = self._tf_transform(SEMANTIC_REFERENCE_FRAME, LINK_NAME)
+        if current_transform is None:
+            return None
+        current_link6_q = self._semantic_transform_quaternion(current_transform)
+        current_alignment = self._semantic_alignment_from_quaternion(current_link6_q)
+        context = self._semantic_prediction_context()
+        if context is None or context["current_model_q"] is None:
+            return None
+
+        if context["missing_joint_states"]:
+            self._log(
+                "warn",
+                "Semantic search missing joint states for "
+                + ", ".join(context["missing_joint_states"])
+                + "; using 0 deg defaults where required",
+            )
+
+        seed_solution, current, memory_source = self._semantic_memory_seed()
+        samples = self._semantic_candidate_samples(target_state, seed_solution, current)
+        current_model_alignment = self._semantic_alignment_from_quaternion(context["current_model_q"])
+        current_model_tf_error_deg = self._semantic_quat_angle_deg(context["current_model_q"], current_link6_q)
+
+        results = []
+        for joint_3 in samples["joint_3"]:
+            for joint_4 in samples["joint_4"]:
+                for joint_5 in samples["joint_5"]:
+                    candidate = {"joint_3": joint_3, "joint_4": joint_4, "joint_5": joint_5}
+                    predicted_q = self._semantic_predict_candidate_quaternion(candidate, context)
+                    if predicted_q is None:
+                        continue
+                    alignment = self._semantic_alignment_from_quaternion(predicted_q)
+                    results.append(
+                        self._semantic_candidate_result(
+                            candidate,
+                            alignment,
+                            target_state,
+                            current,
+                            seed_solution,
+                        )
+                    )
+
+        if not results:
+            return None
+
+        results.sort(key=lambda item: (item["rank_key"], item["total_score"]), reverse=True)
+        accepted = [result for result in results if result["accepted"]]
+        fallback = [result for result in results if result["fallback_ok"]]
+        winner = accepted[0] if accepted else (fallback[0] if fallback else results[0])
+        alternates = []
+        seen = {tuple(round(winner["candidate"][joint_name], 6) for joint_name in WRIST_SEMANTIC_JOINTS)}
+        for result in accepted[1:] + fallback[1:] + results[1:]:
+            signature = tuple(round(result["candidate"][joint_name], 6) for joint_name in WRIST_SEMANTIC_JOINTS)
+            if signature in seen:
+                continue
+            seen.add(signature)
+            alternates.append(result)
+            if len(alternates) >= max(0, SEMANTIC_MAX_PLANNER_ATTEMPTS - 2):
+                break
+
+        return {
+            "semantic": target_state["command"],
+            "target_state": target_state,
+            "strategy": (
+                f"two-stage semantic solve: vertical={target_state['vertical']} via joint_4, "
+                f"horizontal={target_state['horizontal']} via joint_3, joint_5 for roll cleanup"
+            ),
+            "prediction_source": context["source"],
+            "memory_source": memory_source,
+            "sample_summary": self._semantic_sample_summary(samples),
+            "candidate_count": len(results),
+            "accepted_count": len(accepted),
+            "fallback_count": len(fallback),
+            "current_alignment": current_alignment,
+            "current_model_alignment": current_model_alignment,
+            "current_model_tf_error_deg": current_model_tf_error_deg,
+            "current_wrist": current,
+            "seed_solution": seed_solution,
+            "winner": winner,
+            "alternates": alternates,
+            "selection_mode": "accepted" if accepted else ("fallback" if fallback else "rejected"),
+            "sendable": bool(accepted or fallback),
+            "rejection_reason": None if (accepted or fallback) else "no candidate met tightened primary and plane thresholds",
+        }
+
+    def _semantic_build_attempts(self, search: dict) -> list[dict]:
+        attempts = [
+            {
+                "candidate_result": search["winner"],
+                "tolerance_scale": 1.0,
+                "label": "primary_tight",
+                "upstream_mode": "tight",
+            },
+            {
+                "candidate_result": search["winner"],
+                "tolerance_scale": SEMANTIC_RELAXED_TOLERANCE_SCALE,
+                "label": "primary_relaxed",
+                "upstream_mode": "relaxed",
+            },
+        ]
+        if "horizontal" in search["target_state"]["requested_stages"]:
+            attempts.append(
+                {
+                    "candidate_result": search["winner"],
+                    "tolerance_scale": SEMANTIC_RELAXED_TOLERANCE_SCALE,
+                    "label": "joint0_helper_if_needed",
+                    "upstream_mode": "helper",
+                }
+            )
+        for alternate in search["alternates"]:
+            attempts.append(
+                {
+                    "candidate_result": alternate,
+                    "tolerance_scale": SEMANTIC_RELAXED_TOLERANCE_SCALE,
+                    "label": "alternate_relaxed",
+                    "upstream_mode": "relaxed",
+                }
+            )
+            if len(attempts) >= SEMANTIC_MAX_PLANNER_ATTEMPTS:
+                break
+        return attempts
+
+    def _semantic_joint_text(self, candidate: dict[str, float]) -> str:
+        return ", ".join(
+            f"{joint_name}={math.degrees(candidate[joint_name]):+.1f} deg" for joint_name in WRIST_SEMANTIC_JOINTS
+        )
+
+    def _dispatch_semantic_attempt(self, search: dict, attempt_index: int):
+        attempt = search["attempts"][attempt_index]
+        candidate_result = attempt["candidate_result"]
+        constraints = Constraints()
+        constraints.joint_constraints.extend(
+            self._semantic_goal_constraints(
+                search["target_state"],
+                candidate_result["candidate"],
+                tolerance_scale=attempt["tolerance_scale"],
+            )
+        )
+        constraints.joint_constraints.extend(self._semantic_upstream_hold_constraints(attempt["upstream_mode"]))
+        joint_text = self._semantic_joint_text(candidate_result["candidate"])
+        self.last_semantic_validation = (
+            f"{search['semantic']}: pending ({attempt_index + 1}/{len(search['attempts'])}, {attempt['label']})"
+        )
+        self.last_semantic_skip = "none"
+        self._log(
+            "info",
+            "Sending semantic joint goal: "
+            f"button={search['semantic']}, goal_type=semantic_joint_goal, "
+            f"attempt={attempt_index + 1}/{len(search['attempts'])}, attempt_mode={attempt['label']}, "
+            f"target_vertical={search['target_state']['vertical']}, target_horizontal={search['target_state']['horizontal']}, "
+            f"changed={self._semantic_stage_description(search['target_state'])}, "
+            f"memory_source={search['memory_source']}, preferred_joints=joint_4/joint_3/joint_5, "
+            f"joint_0={'helper_allowed' if attempt['upstream_mode'] == 'helper' else 'held'} , "
+            "position_constraint=off, orientation_constraint=off, "
+            f"joint_constraints={', '.join(WRIST_SEMANTIC_JOINTS + SEMANTIC_UPSTREAM_JOINTS)}, "
+            f"tolerance_scale={attempt['tolerance_scale']:.2f}, joint_targets={joint_text}"
+        )
+        self._send_constraints(
+            constraints,
+            prefer_distal_joints=True,
+            goal_context={
+                "type": "semantic_joint_goal",
+                "semantic": search["semantic"],
+                "target_state": search["target_state"],
+                "attempt_index": attempt_index,
+                "attempts": search["attempts"],
+                "search": search,
+                "candidate_result": candidate_result,
+            },
+        )
+
+    def _maybe_retry_active_semantic_goal(self, reason: str) -> bool:
+        context = self._active_goal_context
+        if context is None or context.get("type") != "semantic_joint_goal":
+            return False
+        next_attempt_index = context["attempt_index"] + 1
+        attempts = context["attempts"]
+        if next_attempt_index >= len(attempts):
+            return False
+        next_attempt = attempts[next_attempt_index]
+        next_candidate = next_attempt["candidate_result"]["candidate"]
+        self._log(
+            "warn",
+            "Semantic goal retry: "
+            f"{reason}; next_attempt={next_attempt_index + 1}/{len(attempts)}, "
+            f"mode={next_attempt['label']}, "
+            f"joint_0_mode={next_attempt['upstream_mode']}, "
+            f"joints={self._semantic_joint_text(next_candidate)}",
+        )
+        self._dispatch_semantic_attempt(context["search"], next_attempt_index)
+        return True
+
+    def _schedule_semantic_validation(self, context: dict):
+        if self._semantic_validation_timer is not None:
+            try:
+                self._semantic_validation_timer.cancel()
+            except Exception:
+                pass
+
+        def _validate():
+            alignment = self._semantic_alignment_state()
+            if alignment is None:
+                self.last_semantic_validation = f"{context['semantic']}: TF validation unavailable"
+                self._log(
+                    "warn",
+                    f"Semantic post-command validation unavailable: no {SEMANTIC_REFERENCE_FRAME}->{LINK_NAME} TF",
+                )
+                return
+            validation = self._semantic_validation_metrics(context["target_state"], alignment)
+            current, _ = self._semantic_joint_state_snapshot(WRIST_SEMANTIC_JOINTS)
+            if validation["passed"]:
+                self.semantic_state["vertical_mode"] = context["target_state"]["vertical"]
+                self.semantic_state["horizontal_mode"] = context["target_state"]["horizontal"]
+                self.semantic_state["last_successful_state"] = {
+                    "vertical": context["target_state"]["vertical"],
+                    "horizontal": context["target_state"]["horizontal"],
+                }
+                self.semantic_state["last_successful_candidate"] = dict(current)
+            self.semantic_state["last_successful_validation"] = (
+                f"primary={validation['primary_score']:.3f}, secondary={validation['secondary_score']:.3f}"
+            )
+            self.last_semantic_validation = (
+                f"{context['semantic']}: vertical={context['target_state']['vertical']} "
+                f"({validation['vertical']['primary']:.3f}/{validation['vertical']['secondary']:.3f}), "
+                f"horizontal={context['target_state']['horizontal']} "
+                f"({validation['horizontal']['primary']:.3f}/{validation['horizontal']['secondary']:.3f}), "
+                f"camera={alignment['upright_state']}, ok={'yes' if validation['passed'] else 'no'}"
+            )
+            self._log(
+                "info",
+                "Semantic post-command validation: "
+                f"requested_button={context['semantic']}, target_vertical={context['target_state']['vertical']}, "
+                f"target_horizontal={context['target_state']['horizontal']}, "
+                f"achieved={alignment['semantic']} via tool {alignment['axis_name']}, "
+                f"vertical_primary={validation['vertical']['primary']:.3f}, vertical_plane={validation['vertical']['secondary']:.3f}, "
+                f"horizontal_primary={validation['horizontal']['primary']:.3f}, horizontal_plane={validation['horizontal']['secondary']:.3f}, "
+                f"camera={alignment['upright_state']} ({alignment['upright_score']:+.3f}), "
+                f"result={'accepted' if validation['passed'] else 'sloppy'}"
+            )
+
+        self._semantic_validation_timer = threading.Timer(SEMANTIC_VALIDATION_DELAY_SEC, _validate)
+        self._semantic_validation_timer.daemon = True
+        self._semantic_validation_timer.start()
+
+    def apply_semantic_tool_orientation(self, semantic: str, send_goal: bool = True):
+        if semantic not in SEMANTIC_COMMAND_TARGETS:
+            self._log("error", f"Unknown semantic direction: {semantic}")
+            return False
+        if self._semantic_model is None:
+            self._log("error", "Semantic command unavailable: URDF-backed kinematic model did not load")
+            return False
+        if not self.done.is_set():
+            self._log("warn", "Still executing.")
+            return False
+
+        current_alignment = self._semantic_alignment_state()
+        self._semantic_seed_state_if_needed(current_alignment)
+        target_state = self._semantic_target_state(semantic)
+        if target_state is None:
+            self._log("error", f"Unknown semantic direction: {semantic}")
+            return False
+        self.semantic_state["last_requested_command"] = semantic
+
+        already_satisfied = self._semantic_already_satisfied(target_state, current_alignment)
+        if already_satisfied is not None:
+            current_wrist, _ = self._semantic_joint_state_snapshot(WRIST_SEMANTIC_JOINTS)
+            self.semantic_state["vertical_mode"] = target_state["vertical"]
+            self.semantic_state["horizontal_mode"] = target_state["horizontal"]
+            self.semantic_state["last_successful_state"] = {
+                "vertical": target_state["vertical"],
+                "horizontal": target_state["horizontal"],
+            }
+            self.semantic_state["last_successful_candidate"] = dict(current_wrist)
+            self.semantic_state["last_successful_validation"] = (
+                f"primary={already_satisfied['primary_score']:.3f}, secondary={already_satisfied['secondary_score']:.3f}"
+            )
+            self.last_semantic_skip = (
+                f"{semantic}: already satisfied, skipped motion "
+                f"(vertical={target_state['vertical']}, horizontal={target_state['horizontal']})"
+            )
+            self.last_semantic_validation = self.semantic_state["last_successful_validation"]
+            self.last_semantic_strategy = (
+                f"{semantic}: skipped, target vertical={target_state['vertical']}, "
+                f"horizontal={target_state['horizontal']}, changed={self._semantic_stage_description(target_state)}"
+            )
+            self._log(
+                "info",
+                "Semantic command skipped: "
+                f"button={semantic}, target_vertical={target_state['vertical']}, "
+                f"target_horizontal={target_state['horizontal']}, changed={self._semantic_stage_description(target_state)}, "
+                f"reason=already within tightened semantic thresholds",
+            )
+            return True
+
+        search = self._semantic_candidate_search(target_state)
+        if search is None:
+            self._log(
+                "error",
+                f"No {SEMANTIC_REFERENCE_FRAME}->{LINK_NAME} transform available for semantic candidate search",
+            )
+            return False
+        if not search["sendable"]:
+            self._log(
+                "error",
+                f"Semantic candidate search failed for {semantic}: {search['rejection_reason']}",
+            )
+            self.last_semantic_validation = f"{semantic}: rejected ({search['rejection_reason']})"
+            return False
+
+        winner = search["winner"]
+        joint_text = self._semantic_joint_text(winner["candidate"])
+        fallback_note = ""
+        if search["selection_mode"] != "accepted":
+            fallback_note = f"; fallback={search['selection_mode']}"
+        self.last_semantic_strategy = (
+            f"{semantic}: vertical={target_state['vertical']}, horizontal={target_state['horizontal']}, "
+            f"changed={self._semantic_stage_description(target_state)} "
+            f"[{joint_text}; primary={winner['changed_primary_score']:.3f}; plane={winner['changed_secondary_score']:.3f}; "
+            f"memory={winner['memory_closeness_score']:.3f}; candidates={search['candidate_count']}; "
+            f"accepted={search['accepted_count']}{fallback_note}]"
+        )
+        self.last_semantic_skip = "none"
+
+        self._log(
+            "info",
+            "Semantic command requested: "
+            f"button={semantic}, semantic_reference={SEMANTIC_REFERENCE_FRAME} +X, "
+            f"target_vertical={target_state['vertical']}, target_horizontal={target_state['horizontal']}, "
+            f"changed={self._semantic_stage_description(target_state)}, "
+            f"current_alignment={search['current_alignment']['semantic']} via tool {search['current_alignment']['axis_name']} "
+            f"[{search['current_alignment']['axis_vector'][0]:+.3f}, {search['current_alignment']['axis_vector'][1]:+.3f}, "
+            f"{search['current_alignment']['axis_vector'][2]:+.3f}] "
+            f"(score={search['current_alignment']['score']:.3f}, camera={search['current_alignment']['upright_state']})"
+        )
+        self._log(
+            "info",
+            "Semantic candidate search: "
+            f"evaluation_source={search['prediction_source']}, "
+            f"candidate_ranges={search['sample_summary']}, "
+            f"memory_source={search['memory_source']}, "
+            f"candidates_evaluated={search['candidate_count']}, "
+            f"accepted={search['accepted_count']}, fallback={search['fallback_count']}, "
+            f"current_fk_alignment={search['current_model_alignment']['semantic']} via tool {search['current_model_alignment']['axis_name']} "
+            f"(tf_delta={search['current_model_tf_error_deg']:.2f} deg)"
+        )
+        if search["current_model_tf_error_deg"] > SEMANTIC_FK_TF_WARN_DEG:
+            self._log(
+                "warn",
+                "Semantic FK/TF mismatch warning: "
+                f"current prediction differs from live TF by {search['current_model_tf_error_deg']:.2f} deg",
+            )
+        if search["selection_mode"] != "accepted":
+            self._log(
+                "warn",
+                "Semantic candidate fallback: "
+                f"no candidate met tightened primary/plane thresholds; "
+                f"using best available candidate at primary={winner['changed_primary_score']:.3f}, "
+                f"plane={winner['changed_secondary_score']:.3f}",
+            )
+
+        self._log(
+            "info",
+            "Semantic candidate winner: "
+            f"strategy={search['strategy']}, selection_mode={search['selection_mode']}, chosen_joints={joint_text}, "
+            f"predicted_semantic={winner['alignment']['semantic']} via tool {winner['alignment']['axis_name']}, "
+            f"primary_axis_score={winner['changed_primary_score']:.3f}, "
+            f"secondary_plane_score={winner['changed_secondary_score']:.3f}, "
+            f"upright_score={winner['upright_score']:.3f}, memory_closeness_score={winner['memory_closeness_score']:.3f}, "
+            f"state_hold_score={winner['state_hold_score']:.3f}, upstream_motion_penalty={winner['upstream_motion_penalty']:.3f}, "
+            f"wrist_motion_penalty={winner['wrist_motion_penalty']:.3f}, joint_0={winner['joint_0_mode']}, total={winner['total_score']:.3f}"
+        )
+
+        if not send_goal:
+            return True
+
+        search["attempts"] = self._semantic_build_attempts(search)
+        self.done.clear()
+        self._dispatch_semantic_attempt(search, 0)
+        return True
+
     # Historical name kept for GUI/call-site compatibility. The semantic layer
     # now classifies whichever tool axis should align with link_1 +X instead of
     # assuming every command is only about tool +Z.
     def align_link6_z_to_semantic(self, semantic: str, send_goal: bool = True):
-        if semantic not in SEMANTIC_WRIST_PROFILES:
-            self._log('error', f'Unknown semantic direction: {semantic}')
-            return False
-
-        # get current transform of LINK_NAME in reference_frame
-        transform = self._tf_transform(self.reference_frame, LINK_NAME)
-        if transform is None:
-            self._log('error', 'No transform available to align LINK_6')
-            return False
-
-        alignment = self._semantic_alignment_state()
-        if alignment is None:
-            self._log('error', f'No {SEMANTIC_REFERENCE_FRAME}->{LINK_NAME} transform available for semantic alignment')
-            return False
-
-        semantic_constraints, planned_targets, strategy = self._semantic_joint_constraints(semantic)
-        planned_joint_text = ", ".join(
-            f"{joint_name}={math.degrees(value):+.1f} deg" for joint_name, value in planned_targets.items()
-        )
-        self.last_semantic_strategy = f"{semantic}: {strategy} [{planned_joint_text}]"
-        self._log(
-            'info',
-            'Semantic wrist strategy: '
-            f'semantic_reference={SEMANTIC_REFERENCE_FRAME} +X, semantic={semantic}, '
-            f'desired_axis={SEMANTIC_AXIS_TO_LINK1_X[semantic]} -> {SEMANTIC_REFERENCE_FRAME} +X, '
-            f'current_alignment={alignment["semantic"]} via tool {alignment["axis_name"]} '
-            f'[{alignment["axis_vector"][0]:+.3f}, {alignment["axis_vector"][1]:+.3f}, {alignment["axis_vector"][2]:+.3f}] '
-            f'(score={alignment["score"]:.3f}, camera={alignment["upright_state"]}), '
-            f'strategy={strategy}, planned_joints={planned_joint_text}'
-        )
-        if send_goal:
-            constraints = Constraints()
-            constraints.position_constraints.append(
-                self._position_constraint(transform.translation.x, transform.translation.y, transform.translation.z)
-            )
-            constraints.joint_constraints.extend(semantic_constraints)
-            self._log(
-                'info',
-                f'Sending semantic wrist goal for {semantic}: primary_joints={SEMANTIC_WRIST_PROFILES[semantic]["primary_joints"]}'
-            )
-            self._send_constraints(constraints, prefer_distal_joints=True)
-        return True
+        return self.apply_semantic_tool_orientation(semantic, send_goal=send_goal)
 
     def capture_current_orientation(self) -> bool:
         # Capture orientation of the end-effector expressed in the current reference frame
@@ -577,6 +1515,8 @@ class Teleop(Node):
             math.radians(yaw_deg),
         )
         self.last_semantic_strategy = "none"
+        self.last_semantic_validation = "none"
+        self.last_semantic_skip = "none"
         self._log(
             "info",
             f"Orientation target set -> roll={roll_deg:.1f} deg, pitch={pitch_deg:.1f} deg, yaw={yaw_deg:.1f} deg",
@@ -626,7 +1566,23 @@ class Teleop(Node):
             f"pitch={self.target_orientation_rpy_deg[1]:.1f} deg, "
             f"yaw={self.target_orientation_rpy_deg[2]:.1f} deg"
         )
+        lines.append(
+            "Semantic state: "
+            f"vertical={self._semantic_mode_label('vertical', self.semantic_state['vertical_mode'])}, "
+            f"horizontal={self._semantic_mode_label('horizontal', self.semantic_state['horizontal_mode'])}"
+        )
+        last_successful_state = self.semantic_state["last_successful_state"]
+        if last_successful_state is None:
+            lines.append("Last successful semantic state: none")
+        else:
+            lines.append(
+                "Last successful semantic state: "
+                f"vertical={self._semantic_mode_label('vertical', last_successful_state['vertical'])}, "
+                f"horizontal={self._semantic_mode_label('horizontal', last_successful_state['horizontal'])}"
+            )
         lines.append(f"Semantic strategy: {self.last_semantic_strategy}")
+        lines.append(f"Semantic validation: {self.last_semantic_validation}")
+        lines.append(f"Semantic skip: {self.last_semantic_skip}")
         lines.append(f"Semantic reference: {SEMANTIC_REFERENCE_FRAME} +X")
         world_transform = self._tf_transform(self.reference_frame, LINK_NAME)
         if world_transform is not None:
@@ -795,7 +1751,13 @@ class Teleop(Node):
         # attach joint preference hint if requested
         self._send_constraints(constraints, prefer_distal_joints=prefer_distal_joints)
 
-    def _send_constraints(self, constraints: Constraints, prefer_distal_joints: bool = False):
+    def _send_constraints(
+        self,
+        constraints: Constraints,
+        prefer_distal_joints: bool = False,
+        goal_context: dict | None = None,
+    ):
+        self._active_goal_context = goal_context
         explicit_joint_names = {jc.joint_name for jc in constraints.joint_constraints}
         # Debug: log constraint frames and basic info
         try:
@@ -810,6 +1772,8 @@ class Teleop(Node):
             frame_info.append(f"orientation={'on' if orientation_included else 'off'}")
             if prefer_distal_joints:
                 frame_info.append("joint_bias=distal")
+            if goal_context is not None:
+                frame_info.append(f"goal={goal_context.get('type', 'unspecified')}")
             self._log("info", "Sending goal with constraints: " + ", ".join(frame_info))
         except Exception:
             pass
@@ -837,21 +1801,49 @@ class Teleop(Node):
         # Wait for action server (log if unavailable)
         if not self._client.wait_for_server(timeout_sec=2.0):
             self._log("error", "Move action server unavailable when sending goal")
+            if goal_context is not None and goal_context.get("type") == "semantic_joint_goal":
+                self.last_semantic_validation = f"{goal_context['semantic']}: move action server unavailable"
+            self._active_goal_context = None
             self.done.set()
             return
         self._client.send_goal_async(goal).add_done_callback(self._on_goal)
 
     def _on_goal(self, future):
         goal_handle = future.result()
-        if not goal_handle.accepted:
+        if goal_handle is None or not goal_handle.accepted:
+            if self._maybe_retry_active_semantic_goal("planner rejected goal"):
+                return
             self._log("warn", "Goal rejected.")
+            if self._active_goal_context is not None and self._active_goal_context.get("type") == "semantic_joint_goal":
+                self.last_semantic_validation = f"{self._active_goal_context['semantic']}: goal rejected"
+            self._active_goal_context = None
             self.done.set()
             return
         goal_handle.get_result_async().add_done_callback(self._on_result)
 
     def _on_result(self, future):
-        value = future.result().result.error_code.val
+        result = future.result()
+        if result is None:
+            if self._maybe_retry_active_semantic_goal("execution result missing"):
+                return
+            self._log("warn", "Failed (no result)")
+            if self._active_goal_context is not None and self._active_goal_context.get("type") == "semantic_joint_goal":
+                self.last_semantic_validation = f"{self._active_goal_context['semantic']}: execution result missing"
+            self._active_goal_context = None
+            self.done.set()
+            return
+
+        value = result.result.error_code.val
+        if value != 1 and self._maybe_retry_active_semantic_goal(f"failed with code {value}"):
+            return
+
         self._log("info", "Done." if value == 1 else f"Failed (code {value})")
+        if self._active_goal_context is not None and self._active_goal_context.get("type") == "semantic_joint_goal":
+            if value == 1:
+                self._schedule_semantic_validation(dict(self._active_goal_context))
+            else:
+                self.last_semantic_validation = f"{self._active_goal_context['semantic']}: failed (code {value})"
+        self._active_goal_context = None
         self.done.set()
 
 
@@ -1022,7 +2014,23 @@ class TeleopGui:
             f"{self.node.target_orientation_rpy_deg[1]:+.1f}, "
             f"{self.node.target_orientation_rpy_deg[2]:+.1f} deg"
         )
+        values.append(
+            "Semantic state: "
+            f"vertical={self.node._semantic_mode_label('vertical', self.node.semantic_state['vertical_mode'])}, "
+            f"horizontal={self.node._semantic_mode_label('horizontal', self.node.semantic_state['horizontal_mode'])}"
+        )
+        last_successful_state = self.node.semantic_state["last_successful_state"]
+        if last_successful_state is None:
+            values.append("Last successful semantic state: none")
+        else:
+            values.append(
+                "Last successful semantic state: "
+                f"vertical={self.node._semantic_mode_label('vertical', last_successful_state['vertical'])}, "
+                f"horizontal={self.node._semantic_mode_label('horizontal', last_successful_state['horizontal'])}"
+            )
         values.append(f"Semantic strategy: {self.node.last_semantic_strategy}")
+        values.append(f"Semantic validation: {self.node.last_semantic_validation}")
+        values.append(f"Semantic skip: {self.node.last_semantic_skip}")
         alignment = self.node._semantic_alignment_state()
         if alignment is not None:
             values.append(
@@ -1072,7 +2080,7 @@ class TeleopGui:
         }
         if preset_name in semantic_map:
             sem = semantic_map[preset_name]
-            ok = self.node.align_link6_z_to_semantic(sem, send_goal=True)
+            ok = self.node.apply_semantic_tool_orientation(sem, send_goal=True)
             if ok:
                 self.enqueue_log("info", f"Applied semantic preset: {preset_name} -> {sem}")
             else:
