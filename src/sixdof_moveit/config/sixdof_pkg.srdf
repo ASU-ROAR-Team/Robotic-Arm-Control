@@ -30,11 +30,11 @@
     </group_state>
     <group_state name="close" group="hand_controller">
         <joint name="left_gripper" value="0.0"/>
-        <joint name="right_gripper" value="0.0"/>
+        <joint name="right_gripper" value="0.069"/>
     </group_state>
     <group_state name="open" group="hand_controller">
-        <joint name="left_gripper" value="0.02"/>
-        <joint name="right_gripper" value="0.02"/>
+        <joint name="left_gripper" value="0.069"/>
+        <joint name="right_gripper" value="0.0"/>
     </group_state>
     <disable_collisions link1="base_link" link2="link_1" reason="Adjacent"/>
     <disable_collisions link1="base_link" link2="link_2" reason="Never"/>

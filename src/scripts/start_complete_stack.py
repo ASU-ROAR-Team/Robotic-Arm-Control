@@ -24,9 +24,11 @@ KILL_PATTERNS = [
     "ros2 launch sixdof_moveit complete.launch.py",
     "ros2 launch sixdof_pkg gazebo.launch.py",
     "python3 src/scripts/teleop.py",
+    "gripper_joint_state_republisher",
     # Keep ee_ref single-owned: a stale broadcaster will keep publishing the
     # old frame pose and fight with the current teleop-controlled instance.
     "reference_frame_broadcaster.py",
+    "static_world_to_base.py",
     "python3 src/scripts/workspace.py",
     "python3 src/scripts/workspace_checker.py",
     "move_group",
@@ -44,6 +46,10 @@ RVIZ_INSTALL = WORKSPACE_ROOT / "install" / "sixdof_moveit" / "share" / "sixdof_
 
 def run_shell(command: str) -> int:
     return subprocess.run(["bash", "-lc", command], check=False).returncode
+
+
+def run_env_shell(command: str) -> int:
+    return run_shell(f"{ENV_PREFIX} && {command}")
 
 
 def kill_lingering_processes() -> None:
@@ -116,6 +122,12 @@ def main() -> int:
         spawn_process("ref_broadcaster", "python3 src/scripts/reference_frame_broadcaster.py")
         time.sleep(2.0)
         spawn_process("workspace", "python3 src/scripts/workspace.py")
+        time.sleep(1.0)
+        run_env_shell(
+            "ros2 action send_goal /hand_controller_controller/follow_joint_trajectory "
+            "control_msgs/action/FollowJointTrajectory "
+            "'{trajectory: {joint_names: [left_gripper, right_gripper], points: [{positions: [0.069, 0.0], time_from_start: {sec: 1}}]}}'"
+        )
 
         print("All processes started. Press Ctrl+C to stop everything.")
         while True:

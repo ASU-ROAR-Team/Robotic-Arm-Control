@@ -67,14 +67,6 @@ def generate_launch_description():
         executable='robot_state_publisher',
         output='screen',
         parameters=[{'robot_description': robot_desc_content, 'use_sim_time': True}],
-        remappings=[('/joint_states', '/joint_states_corrected')],
-    )
-
-    gripper_state_republisher = Node(
-        package='sixdof_pkg',
-        executable='gripper_joint_state_republisher.py',
-        output='screen',
-        parameters=[{'use_sim_time': True}],
     )
 
     # --- 7. BRIDGE (ROS <-> FORTRESS) ---
@@ -116,7 +108,6 @@ def generate_launch_description():
     return LaunchDescription([
         *software_gl_actions(),
         gazebo,
-        gripper_state_republisher,
         node_robot_state_publisher,
         spawn_entity,
         bridge,

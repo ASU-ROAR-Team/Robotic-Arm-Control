@@ -41,7 +41,7 @@ FRAME_ID = "world"
 BASE_FRAME = "base_link"
 SEMANTIC_REFERENCE_FRAME = "link_1"
 HAND_CONTROLLER = "/hand_controller_controller/follow_joint_trajectory"
-JOINT_STATE_TOPIC = "/joint_states_corrected"
+JOINT_STATE_TOPIC = "/joint_states"
 DEFAULT_CM = 1.0
 POSITION_TOL = 0.01
 ORIENTATION_TOL = 0.20
@@ -55,9 +55,9 @@ HOME_JOINTS = {
     "joint_5": 0.0,
 }
 GRIPPER_MIN = 0.0
-GRIPPER_MAX = 0.07
+GRIPPER_MAX = 0.069
 GRIPPER_OPEN_BUTTON = 0.0
-GRIPPER_CLOSE_BUTTON = 0.07
+GRIPPER_CLOSE_BUTTON = 0.069
 GRIPPER_TRAJECTORY_SECONDS = 0.35
 ORIENTATION_PRESETS_DEG = {
     "Look Forward": (180.0, 0.0, 0.0),
@@ -1705,7 +1705,7 @@ class Teleop(Node):
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = ["left_gripper", "right_gripper"]
         point = JointTrajectoryPoint()
-        point.positions = [opening, opening]
+        point.positions = [GRIPPER_MAX - opening, opening]
         point.time_from_start = BuiltinDuration(sec=0, nanosec=int(GRIPPER_TRAJECTORY_SECONDS * 1_000_000_000))
         goal.trajectory.points = [point]
 
