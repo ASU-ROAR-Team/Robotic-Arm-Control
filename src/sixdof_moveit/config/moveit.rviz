@@ -59,8 +59,8 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /workspace_ee_pos
       Value: true
-    - Acceleration_Scaling_Factor: 0.1
-      Class: moveit_rviz_plugin/MotionPlanning
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Acceleration_Scaling_Factor: 0.1
       Enabled: true
       Move Group Namespace: ""
       MoveIt_Allow_Approximate_IK: false

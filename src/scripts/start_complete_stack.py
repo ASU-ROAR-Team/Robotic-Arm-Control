@@ -52,6 +52,17 @@ def run_env_shell(command: str) -> int:
     return run_shell(f"{ENV_PREFIX} && {command}")
 
 
+def wait_for_env_shell(command: str, description: str, timeout_sec: float, poll_sec: float = 0.5) -> bool:
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        if run_env_shell(command) == 0:
+            print(f"[ready] {description}")
+            return True
+        time.sleep(poll_sec)
+    print(f"[warn] timed out waiting for {description}")
+    return False
+
+
 def kill_lingering_processes() -> None:
     for pattern in KILL_PATTERNS:
         run_shell(f"pkill -f {shlex.quote(pattern)} || true")
@@ -120,7 +131,11 @@ def main() -> int:
         # Start the only ee_ref broadcaster after cleanup so teleop updates go
         # to a single TF authority for the lifetime of this stack.
         spawn_process("ref_broadcaster", "python3 src/scripts/reference_frame_broadcaster.py")
-        time.sleep(2.0)
+        wait_for_env_shell(
+            "ros2 service type /compute_fk >/dev/null 2>&1",
+            "/compute_fk service",
+            timeout_sec=25.0,
+        )
         spawn_process("workspace", "python3 src/scripts/workspace.py")
         time.sleep(1.0)
         run_env_shell(

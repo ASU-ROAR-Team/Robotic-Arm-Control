@@ -22,7 +22,7 @@ def generate_launch_description():
     sixdof_pkg_path = get_package_share_directory('sixdof_pkg')
 
     cleanup_gazebo = ExecuteProcess(
-        cmd=['bash', '-lc', "pkill -f 'ign gazebo' || true"],
+        cmd=['bash', '-lc', "pkill -f '^ign gazebo($| )' || true"],
         output='screen'
     )
 

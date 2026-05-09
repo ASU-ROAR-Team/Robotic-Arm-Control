@@ -45,7 +45,7 @@ except Exception:
 
 
 DEFAULT_JOINT_LIMITS = {
-    "joint_0": (-1.5708, 1.5708),
+    "joint_0": (-3.1416, 3.1416),
     "joint_1": (-2.6350, 0.0170),
     "joint_2": (-0.0170, 3.1590),
     "joint_3": (-1.6581, 1.6581),
