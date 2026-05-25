@@ -27,7 +27,7 @@ arm_controller_controller:
       - position
     state_interfaces:
       - position
-      - velocity
+      # - velocity
 hand_controller_controller:
   ros__parameters:
     joints:
@@ -37,4 +37,4 @@ hand_controller_controller:
       - position
     state_interfaces:
       - position
-      - velocity
+      # - velocity

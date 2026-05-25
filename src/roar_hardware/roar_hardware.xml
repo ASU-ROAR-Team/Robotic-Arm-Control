@@ -1,0 +1,5 @@
+<library path="roar_hardware">
+  <class name="roar_hardware/RoarHardwareInterface" type="roar_hardware::RoarHardwareInterface" base_class_type="hardware_interface::SystemInterface">
+    <description>Custom hardware interface for the ROAR 6DOF arm.</description>
+  </class>
+</library>

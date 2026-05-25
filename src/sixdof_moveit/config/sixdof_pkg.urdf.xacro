@@ -3,7 +3,7 @@
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
     <xacro:arg name="use_mock_hardware" default="false" />
 
-    <xacro:include filename="$(find sixdof_pkg)/urdf/roar.urdf" />
+    <xacro:include filename="$(find sixdof_pkg)/urdf/roar.xacro" />
     <xacro:include filename="sixdof_pkg.ros2_control.xacro" />
 
     <xacro:if value="$(arg use_mock_hardware)">

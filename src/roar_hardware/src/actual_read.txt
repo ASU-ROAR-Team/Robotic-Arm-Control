@@ -1,0 +1,102 @@
+hardware_interface::return_type RoarHardwareInterface::read(
+  const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
+{
+  // 1. FETCH REAL HARDWARE DATA HERE
+  // This is where you grab the latest packet from your MCU.
+  // For this example, let's assume you've parsed the incoming encoder data into these variables:
+  double enc_j0_deg = /* Insert your MCU data here */;
+  double enc_j1_deg = /* Insert your MCU data here */;
+  double enc_j2_deg = /* Insert your MCU data here */;
+  double enc_j3_deg = /* Insert your MCU data here */;
+  
+  double enc_diff_m1_deg = /* Motor 1 encoder (Differential) */;
+  double enc_diff_m2_deg = /* Motor 2 encoder (Differential) */;
+  
+  double enc_gripper_servo_deg = /* Gripper feedback (if available, otherwise mirror it) */;
+
+  const double deg_to_rad = M_PI / 180.0;
+
+  // 2. Standard Arm Joints (Degrees -> Radians)
+  hw_states_[0] = enc_j0_deg * deg_to_rad;
+  hw_states_[1] = enc_j1_deg * deg_to_rad;
+  hw_states_[2] = enc_j2_deg * deg_to_rad;
+  hw_states_[3] = enc_j3_deg * deg_to_rad;
+
+  // 3. Differential Gear Inverse Kinematics (Joints 4 & 5)
+  double j4_deg = (enc_diff_m1_deg + enc_diff_m2_deg) / 2.0;
+  double j5_deg = (enc_diff_m1_deg - enc_diff_m2_deg) / 2.0;
+
+  hw_states_[4] = j4_deg * deg_to_rad;
+  hw_states_[5] = j5_deg * deg_to_rad;
+
+  // 4. Gripper Mapping (Servo Degrees -> Meters)
+  // Reverses the linear interpolation used in the write() function
+  double gripper_m = GRIPPER_URDF_MIN_M + 
+    ((enc_gripper_servo_deg - GRIPPER_SERVO_MIN_DEG) / (GRIPPER_SERVO_MAX_DEG - GRIPPER_SERVO_MIN_DEG)) * (GRIPPER_URDF_MAX_M - GRIPPER_URDF_MIN_M);
+
+  // Update MoveIt's state for both gripper fingers
+  hw_states_[6] = gripper_m; // left_gripper
+  hw_states_[7] = gripper_m; // right_gripper
+
+  return hardware_interface::return_type::OK;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+hardware_interface::return_type RoarHardwareInterface::read(
+  const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
+{
+  // 1. FETCH REAL HARDWARE DATA HERE
+  // This is where you grab the latest packet from your MCU.
+  double enc_j0_deg = /* Insert your MCU data here */;
+  double enc_j1_deg = /* Insert your MCU data here */;
+  double enc_j2_deg = /* Insert your MCU data here */;
+  double enc_j3_deg = /* Insert your MCU data here */;
+  
+  double enc_diff_m1_deg = /* Motor 1 encoder (Differential) */;
+  double enc_diff_m2_deg = /* Motor 2 encoder (Differential) */;
+  
+  double enc_gripper_servo_deg = /* Gripper feedback (if available, otherwise mirror it) */;
+
+  const double deg_to_rad = M_PI / 180.0;
+
+  // 2. Standard Arm Joints (Degrees -> Radians)
+  hw_states_[0] = enc_j0_deg * deg_to_rad;
+  hw_states_[1] = enc_j1_deg * deg_to_rad;
+  hw_states_[2] = enc_j2_deg * deg_to_rad;
+  hw_states_[3] = enc_j3_deg * deg_to_rad;
+
+  // 3. Differential Gear Inverse Kinematics (Joints 4 & 5)
+  double j4_deg = (enc_diff_m1_deg + enc_diff_m2_deg) / 2.0;
+  double j5_deg = (enc_diff_m1_deg - enc_diff_m2_deg) / 2.0;
+
+  hw_states_[4] = j4_deg * deg_to_rad;
+  hw_states_[5] = j5_deg * deg_to_rad;
+
+  // 4. Gripper Mapping (Servo Degrees -> Meters)
+  double gripper_m = GRIPPER_URDF_MIN_M + 
+    ((enc_gripper_servo_deg - GRIPPER_SERVO_MIN_DEG) / (GRIPPER_SERVO_MAX_DEG - GRIPPER_SERVO_MIN_DEG)) * (GRIPPER_URDF_MAX_M - GRIPPER_URDF_MIN_M);
+
+  hw_states_[6] = gripper_m; // left_gripper
+  hw_states_[7] = gripper_m; // right_gripper
+
+  return hardware_interface::return_type::OK;
+}
