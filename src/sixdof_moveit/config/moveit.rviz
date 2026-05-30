@@ -6,7 +6,7 @@ Panels:
       Expanded:
         - /MotionPlanning1
       Splitter Ratio: 0.5
-    Tree Height: 449
+    Tree Height: 443
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -51,7 +51,7 @@ Visualization Manager:
       Enabled: true
       Name: Workspace EE
       Namespaces:
-        ee_current: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Transient Local
@@ -59,8 +59,8 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /workspace_ee_pos
       Value: true
-    - Class: moveit_rviz_plugin/MotionPlanning
-      Acceleration_Scaling_Factor: 0.1
+    - Acceleration_Scaling_Factor: 0.1
+      Class: moveit_rviz_plugin/MotionPlanning
       Enabled: true
       Move Group Namespace: ""
       MoveIt_Allow_Approximate_IK: false
@@ -131,6 +131,10 @@ Visualization Manager:
             Show Trail: false
             Value: true
           right_gripper_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+          right_gripper_visual:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -229,6 +233,10 @@ Visualization Manager:
             Alpha: 1
             Show Axes: false
             Show Trail: false
+          right_gripper_visual:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
             Value: true
           world:
             Alpha: 1
@@ -240,19 +248,19 @@ Visualization Manager:
       Value: true
       Velocity_Scaling_Factor: 0.1
     - Class: rviz_default_plugins/Axes
-      Enabled: true
+      Enabled: false
       Length: 0.5
       Name: Axes
       Radius: 0.05000000074505806
-      Reference Frame: link_6
-      Value: true
+      Reference Frame: right_gripper_link
+      Value: false
     - Class: rviz_default_plugins/Axes
-      Enabled: true
+      Enabled: false
       Length: 0.5
       Name: Axes
       Radius: 0.05000000074505806
       Reference Frame: link_1
-      Value: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -271,7 +279,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 5.5793867111206055
+      Distance: 6.918439865112305
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -286,10 +294,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3647962212562561
+      Pitch: 0.3497961163520813
       Target Frame: world
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.7823898792266846
+      Yaw: 3.8923888206481934
     Saved: ~
 Window Geometry:
   Displays:
@@ -303,9 +311,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000001c900000581fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b00000242000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000283000001690000016900fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000003f2000001ca000000a000ffffff000003250000058100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000100000000000001c900000581fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb000000100044006900730070006c006100790073010000003b0000023c000000c700fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000027d000001740000017400fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000003f7000001c5000000a000ffffff000003250000058100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 1268
-  X: 833
+  X: 1139
   Y: -32

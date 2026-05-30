@@ -1,4 +1,5 @@
 import os
+import subprocess
 import tempfile
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
@@ -16,6 +17,13 @@ def software_gl_actions():
         SetEnvironmentVariable(name='QT_X11_NO_MITSHM', value='1'),
     ]
 
+
+def load_robot_description(robot_model_path: str) -> str:
+    if robot_model_path.endswith('.xacro'):
+        return subprocess.check_output(['xacro', robot_model_path], text=True, env=os.environ.copy())
+    with open(robot_model_path, 'r') as file:
+        return file.read()
+
 def generate_launch_description():
     # --- 1. GET DYNAMIC PACKAGE PATHS ---
     pkg_sixdof_pkg = get_package_share_directory('sixdof_pkg')
@@ -23,13 +31,15 @@ def generate_launch_description():
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
     # --- 2. DEFINE PATHS ---
-    urdf_file_path = os.path.join(pkg_sixdof_pkg, 'urdf', 'roar.urdf')
+    urdf_file_path = os.environ.get(
+        'SIXDOF_ROBOT_DESCRIPTION_FILE',
+        os.path.join(pkg_sixdof_pkg, 'urdf', 'roar_variant.urdf.xacro'),
+    )
     meshes_path = os.path.join(pkg_sixdof_pkg, 'meshes')
     controllers_yaml_path = os.path.join(pkg_sixdof_moveit, 'config', 'ros2_controllers.yaml')
 
     # --- 3. PROCESS URDF ---
-    with open(urdf_file_path, 'r') as file:
-        robot_desc_content = file.read()
+    robot_desc_content = load_robot_description(urdf_file_path)
     
     # Replace package:// with file:// for Gazebo
     robot_desc_content = robot_desc_content.replace('package://sixdof_pkg/meshes', 'file://' + meshes_path)

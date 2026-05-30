@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sixdof_pkg">
+  <xacro:arg name="tip_variant" default="$(optenv SIXDOF_TIP_VARIANT sampling)" />
+  <xacro:property name="tip_variant" value="$(arg tip_variant)" />
+  <xacro:include filename="roar_master.urdf.xacro" />
+
+  <xacro:if value="${tip_variant == 'sampling'}">
+    <xacro:roar_robot left_tip_mesh="left_gripper_link.STL" right_tip_mesh="right_gripper_link.STL" right_tip_visual_rpy="3.141592653589793 0 2.8797932657906435" right_tip_joint_rpy="1.570792653589793 3 1.5708" />
+  </xacro:if>
+  <xacro:if value="${tip_variant == 'maintenence'}">
+    <xacro:roar_robot left_tip_mesh="left_maintenance_tip.STL" right_tip_mesh="right_maintenance_tip.STL" right_tip_inertial_xyz="-0.00864212255326269 0.0150111570645177 0.00778071011675441" right_tip_mass="0.0967887180478583" right_tip_ixx="6.28644855188816E-05" right_tip_ixy="9.84469902931476E-06" right_tip_ixz="-1.3291790641375E-05" right_tip_iyy="7.68573699376163E-05" right_tip_iyz="1.25654864207267E-05" right_tip_izz="6.82919145163416E-05" right_tip_joint_xyz="-0.0855 0.0175 0.1025" right_tip_joint_rpy="-1.570792653589793 -3 -1.5708" right_tip_joint_axis="0 0 1" right_tip_visual_rpy="3.141592653589793 0 2.8797932657906435" left_tip_inertial_xyz="0.0132305377280187 -0.011547866046375 0.00761145451338585" left_tip_mass="0.0990011570242059" left_tip_ixx="5.92365712461038E-05" left_tip_ixy="3.97389792444207E-06" left_tip_ixz="1.62196797921839E-05" left_tip_iyy="8.13988021126637E-05" left_tip_iyz="-8.26522825810882E-06" left_tip_izz="6.94167200093782E-05" left_tip_joint_xyz="0.0165 -0.0175 0.1025" left_tip_joint_rpy="-1.5708 -0.13911 1.5708" left_tip_joint_axis="0 0 -1" />
+  </xacro:if>
+  <xacro:if value="${tip_variant == 'probe'}">
+    <xacro:roar_robot left_tip_mesh="left_probing_tip.STL" right_tip_mesh="right_probing_tip.STL" right_tip_inertial_xyz="-0.00927868249613728 0.0176765501989139 0.0065846328553667" right_tip_mass="0.100934764684884" right_tip_ixx="6.23144617424404E-05" right_tip_ixy="9.80499677551936E-06" right_tip_ixz="-1.33365382795586E-05" right_tip_iyy="8.09809586061155E-05" right_tip_iyz="1.23250232958538E-05" right_tip_izz="7.32194078360124E-05" right_tip_joint_xyz="-0.0855 0.0175 0.1025" right_tip_joint_rpy="-1.570792653589793 -3 -1.5708" right_tip_joint_axis="0 0 1" left_tip_inertial_xyz="0.0132739437565697 -0.0161715529032556 0.00702827684848639" left_tip_mass="0.10155733097556" left_tip_ixx="5.98594757491733E-05" left_tip_ixy="4.20314012499222E-06" left_tip_ixz="1.6142122012769E-05" left_tip_iyy="8.53702708674501E-05" left_tip_iyz="-7.79321809631275E-06" left_tip_izz="7.39001155826025E-05" left_tip_joint_xyz="0.0165 -0.0175 0.1025" left_tip_joint_rpy="-1.5708 -0.13911 1.5708" left_tip_joint_axis="0 0 -1" right_tip_visual_rpy="3.141592653589793 0 2.8797932657906435" />
+  </xacro:if>
+  <xacro:if value="${tip_variant not in ['sampling', 'maintenence', 'probe']}">
+    <xacro:roar_robot left_tip_mesh="left_gripper_link.STL" right_tip_mesh="right_gripper_link.STL" />
+  </xacro:if>
+</robot>

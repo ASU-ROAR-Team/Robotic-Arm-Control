@@ -12,6 +12,8 @@ Features:
 
 import argparse
 import math
+import os
+import subprocess
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -211,7 +213,7 @@ SEMANTIC_JOINT_LIMIT_FALLBACKS = {
     "joint_5": (-WRIST_JOINT_LIMIT, WRIST_JOINT_LIMIT),
 }
 SEMANTIC_URDF_CANDIDATES = (
-    Path(__file__).resolve().parents[1] / "sixdof_pkg" / "urdf" / "roar.urdf",
+    Path(__file__).resolve().parents[1] / "sixdof_pkg" / "urdf" / "roar_variant.urdf.xacro",
     Path(__file__).resolve().parents[1] / "sixdof_moveit" / "config" / "sixdof_pkg.urdf.xacro",
 )
 
@@ -586,7 +588,15 @@ class Teleop(Node):
             if not urdf_path.exists():
                 continue
             try:
-                root = ET.parse(urdf_path).getroot()
+                if urdf_path.suffix == ".xacro":
+                    xml_text = subprocess.check_output(
+                        ["xacro", str(urdf_path)],
+                        text=True,
+                        env=os.environ.copy(),
+                    )
+                    root = ET.fromstring(xml_text)
+                else:
+                    root = ET.parse(urdf_path).getroot()
                 joints: dict[str, dict[str, object]] = {}
                 for joint_element in root.findall("joint"):
                     joint_name = joint_element.attrib.get("name")

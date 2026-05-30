@@ -60,12 +60,15 @@ BASE_FRAME  = "base_link"
 
 
 def resolve_urdf_path() -> str | None:
+    env_path = os.environ.get("SIXDOF_ROBOT_DESCRIPTION_FILE")
+    if env_path:
+        return env_path
     if get_package_share_directory is not None:
         try:
-            return os.path.join(get_package_share_directory("sixdof_pkg"), "urdf", "roar.urdf")
+            return os.path.join(get_package_share_directory("sixdof_pkg"), "urdf", "roar_variant.urdf.xacro")
         except Exception:
             pass
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sixdof_pkg", "urdf", "roar.urdf"))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sixdof_pkg", "urdf", "roar_variant.urdf.xacro"))
 
 
 def load_chain_joint_limits_from_urdf(base_link: str, ee_link: str) -> tuple[list[str], dict[str, tuple[float, float]], str | None]:

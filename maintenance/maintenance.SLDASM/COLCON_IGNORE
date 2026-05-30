@@ -1,0 +1,1 @@
+This package uses catkin (ROS1) and is intentionally ignored by colcon/ROS2 builds.
