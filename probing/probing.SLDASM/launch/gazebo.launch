@@ -1,6 +1,7 @@
 <launch>
-  <include
-    file="$(find gazebo_ros)/launch/empty_world.launch" />
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="/home/roar/6dof_arm/Robotic-Arm-Control/worlds/optimized_empty.world"/>
+  </include>
   <node
     name="tf_footprint_base"
     pkg="tf"

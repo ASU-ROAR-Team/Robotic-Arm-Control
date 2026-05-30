@@ -57,7 +57,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        *software_gl_actions(),
+        # *software_gl_actions(),
         SetParameter(name='use_sim_time', value=True),
         cleanup_gazebo,
         TimerAction(period=1.0, actions=[lab_gazebo]),

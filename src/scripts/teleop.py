@@ -21,6 +21,7 @@ from pathlib import Path
 from queue import Empty, Queue
 import tkinter as tk
 from tkinter import scrolledtext
+import shutil
 
 import rclpy
 from builtin_interfaces.msg import Duration as BuiltinDuration
@@ -139,35 +140,6 @@ SEMANTIC_VERTICAL_PROFILES = {
         "memory_bias_joint": "joint_4",
     },
     "level": {
-        "joint_4_samples_deg": [20.0, 35.0, 50.0, 65.0, 80.0, 90.0, 100.0],
-        "primary_axis": "+Z",
-        "primary_target": (1.0, 0.0, 0.0),
-        "secondary_axis": "+Y",
-        "secondary_target": (0.0, 0.0, 1.0),
-        "primary_min": 0.95,
-        "secondary_min": 0.82,
-        "goal_tolerance": 0.16,
-        "memory_bias_joint": "joint_4",
-    },
-    "up": {
-        "joint_4_samples_deg": [-95.0, -80.0, -65.0, -50.0, -35.0, -20.0, -5.0],
-        "primary_axis": "-Y",
-        "primary_target": (1.0, 0.0, 0.0),
-        "secondary_axis": "+X",
-        "secondary_target": (0.0, 1.0, 0.0),
-        "primary_min": 0.90,
-        "secondary_min": 0.68,
-        "goal_tolerance": 0.20,
-        "memory_bias_joint": "joint_4",
-    },
-}
-SEMANTIC_HORIZONTAL_PROFILES = {
-    "left": {
-        "joint_3_samples_deg": [-95.0, -80.0, -65.0, -50.0, -35.0, -20.0, -5.0],
-        "primary_axis": "-X",
-        "primary_target": (1.0, 0.0, 0.0),
-        "secondary_axis": "+Y",
-        "secondary_target": (0.0, 0.0, 1.0),
         "primary_min": 0.90,
         "secondary_min": 0.66,
         "goal_tolerance": 0.20,
@@ -356,6 +328,42 @@ class Teleop(Node):
                 f"Semantic kinematic model loaded from {self._semantic_model['urdf_path']} "
                 f"using prefix {SEMANTIC_REFERENCE_FRAME}->{self._semantic_model['prefix_link']}",
             )
+        # Start a small static transform publisher for `tool_frame` (so RViz axes can show it).
+        # Variant can be set with env var SIXDOF_TIP_VARIANT (sampling|maintenance|probe). Defaults to sampling.
+        variant = os.environ.get("SIXDOF_TIP_VARIANT", "sampling")
+        variant = variant.lower()
+        # tolerate common misspelling 'maintenence' used elsewhere
+        if variant == 'maintenence':
+            variant = 'maintenance'
+        self.variant = variant
+        self._log('info', f"Tip variant set to '{self.variant}'")
+        offsets = {
+            "sampling": (0.0, -0.00608, 0.16385, 0.0, 0.0, 0.0),
+            "probe": (0.0, -0.00608, 0.16385, 0.0, 0.0, 0.0),
+            "maintenance": (0.0, -0.00308, 0.15735, 0.0, 0.0, 0.0),
+        }
+        offs = offsets.get(variant, offsets["sampling"])
+        try:
+            cmd = [
+                "ros2",
+                "run",
+                "tf2_ros",
+                "static_transform_publisher",
+                f"{offs[0]}",
+                f"{offs[1]}",
+                f"{offs[2]}",
+                f"{offs[3]}",
+                f"{offs[4]}",
+                f"{offs[5]}",
+                "link_6",
+                "tool_frame",
+            ]
+            self._tf_pub_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self._log("info", f"Started static tool_frame publisher for variant '{variant}'")
+        except Exception as exc:
+            self._tf_pub_proc = None
+            self._log("warn", f"Failed to start static tool_frame publisher: {exc}")
+        # single `tool_frame` expected in URDF; no republisher needed
 
     def _log(self, level, text):
         logger = self.get_logger()
@@ -367,6 +375,19 @@ class Teleop(Node):
             logger.info(text)
         if self.log_callback is not None:
             self.log_callback(level, text)
+
+    def stop_tool_frame_publisher(self):
+        try:
+            if getattr(self, "_tf_pub_proc", None):
+                proc = self._tf_pub_proc
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=1.0)
+                    except Exception:
+                        proc.kill()
+        except Exception:
+            pass
 
     def rotate_reference(self, axis: str, degrees: float):
         # Rotate the ee_ref frame about a world axis ('X','Y','Z') by degrees, keeping position
@@ -432,6 +453,7 @@ class Teleop(Node):
     def _js(self, msg):
         for name, position in zip(msg.name, msg.position):
             self.joints[name] = position
+    
 
     def _tf_transform(self, parent, child):
         # Try direct lookup first
@@ -1703,6 +1725,312 @@ class Teleop(Node):
         self._log("info", "HOME -> all joints to 0 deg")
         self._send_constraints(constraints)
 
+    def spawn_demo_objects(self):
+        # Spawn demo objects depending on the current tip variant.
+        # For `maintenance` spawn a 5cm cube 0.5m (+Y) from the `tool_frame` and placed on the floor.
+        # For `sampling` keep the previous sphere spawn behaviour.
+        # 5cm x 5cm x 8cm cuboid (meters: 0.05 x 0.05 x 0.08)
+        cube_sdf = (
+            '<sdf version="1.6">'
+            '<model name="demo_cube">'
+            '  <static>false</static>'
+            '  <link name="link">'
+            '    <pose>0 0 0 0 0 0</pose>'
+            '    <inertial>'
+            # Reduce mass to ease simulation load and make it easier for the gripper to hold
+            '      <mass>0.02</mass>'
+            '      <inertia>'
+            # approximate small-box inertia for 0.02 kg, 0.05x0.05x0.08 m
+            f'        <ixx>{1.48e-05:.8e}</ixx>'
+            f'        <ixy>0.0</ixy>'
+            f'        <ixz>0.0</ixz>'
+            f'        <iyy>{1.48e-05:.8e}</iyy>'
+            f'        <iyz>0.0</iyz>'
+            f'        <izz>{8.33e-06:.8e}</izz>'
+            '      </inertia>'
+            '    </inertial>'
+            '    <visual name="vis">'
+            '      <geometry><box><size>0.05 0.05 0.08</size></box></geometry>'
+            '      <material><ambient>0 0 1 1</ambient></material>'
+            '    </visual>'
+            '    <collision name="col">'
+            '      <max_contacts>2</max_contacts>'
+            '      <geometry><box><size>0.05 0.05 0.08</size></box></geometry>'
+            '      <surface>'
+            '        <friction><ode><mu>10.0</mu><mu2>10.0</mu2></ode></friction>'
+            '        <bounce><restitution_coefficient>0.0</restitution_coefficient><restitution_threshold>1.0</restitution_threshold></bounce>'
+            '      </surface>'
+            '    </collision>'
+            '  </link>'
+            '</model>'
+            '</sdf>'
+        )
+        sphere_sdf = (
+            '<sdf version="1.6">'
+            '<model name="demo_sphere">'
+            '  <static>false</static>'
+            '  <link name="link">'
+            '    <pose>0 0 0 0 0 0</pose>'
+            '    <visual name="vis">'
+            '      <geometry><sphere><radius>0.02</radius></sphere></geometry>'
+            '      <material><ambient>1 0 0 1</ambient></material>'
+            '    </visual>'
+            '    <inertial>'
+            '      <mass>0.02</mass>'
+            '      <inertia>'
+            f'        <ixx>{3.2e-06:.8e}</ixx>'
+            '        <ixy>0.0</ixy>'
+            '        <ixz>0.0</ixz>'
+            f'        <iyy>{3.2e-06:.8e}</iyy>'
+            '        <iyz>0.0</iyz>'
+            f'        <izz>{3.2e-06:.8e}</izz>'
+            '      </inertia>'
+            '    </inertial>'
+            '    <collision name="col">'
+            '      <max_contacts>2</max_contacts>'
+            '      <geometry><sphere><radius>0.02</radius></sphere></geometry>'
+            '    </collision>'
+            '  </link>'
+            '</model>'
+            '</sdf>'
+        )
+
+        # store positions locally for pick calculations (will be updated per-variant)
+        self.spawned_models = {}
+
+        spawned = False
+        # Prefer Ignition 'ign' CLI create service if present (works in headless setups)
+        ign_path = shutil.which("ign")
+        if ign_path:
+            try:
+                import re
+
+                try:
+                    svc_list = subprocess.check_output([ign_path, "service", "-l"], text=True)
+                    m = re.search(r"(/world/[^\s]*/create)", svc_list)
+                    service_path = m.group(1) if m else "/world/default/create"
+                except Exception:
+                    service_path = "/world/default/create"
+
+                def make_req_text(name, sdf, x, y, z):
+                    safe_sdf = sdf.replace('"', '\\"')
+                    return f'sdf: "{safe_sdf}"\nname: "{name}"\npose {{ position {{ x: {x} y: {y} z: {z} }} }}'
+
+                # Compute spawn poses depending on variant
+                if getattr(self, 'variant', 'sampling') == 'maintenance':
+                    # Try to get tool_frame -> world transform
+                    tf = None
+                    try:
+                        tf = self._tf_transform(FRAME_ID, 'tool_frame')
+                    except Exception:
+                        tf = None
+
+                    if tf is None:
+                        # Fallback to a reasonable fixed pose if TF is unavailable
+                        wx, wy, wz = 0.6, 0.0, 0.025
+                        self._log('warn', 'tool_frame TF unavailable, using fallback spawn position for maintenance cube')
+                    else:
+                        q = (tf.rotation.x, tf.rotation.y, tf.rotation.z, tf.rotation.w)
+                        t = (tf.translation.x, tf.translation.y, tf.translation.z)
+                        # Offset in tool frame: +Y 0.5m
+                        off_tool = (0.0, 0.5, 0.0)
+                        # rotate offset into world
+                        off_world = self._rotate_vector(q, off_tool)
+                        wx = t[0] + off_world[0]
+                        wy = t[1] + off_world[1]
+                        # Place the cube on the floor: half-height above floor (0.08/2 = 0.04 m)
+                        wz = 0.04
+                    req_cube_text = make_req_text("demo_cube", cube_sdf, wx, wy, wz)
+                    req_sphere_text = None
+                    # record spawned model position
+                    if req_sphere_text is None:
+                        self.spawned_models["demo_cube"] = (wx, wy, wz)
+                else:
+                    req_cube_text = None
+                    req_sphere_text = make_req_text("demo_sphere", sphere_sdf, 0.6, 0.15, 0.02)
+                    self.spawned_models["demo_sphere"] = (0.6, 0.15, 0.02)
+
+                # Call ign service only for prepared models
+                if req_cube_text is not None:
+                    subprocess.run(
+                        [
+                            ign_path,
+                            "service",
+                            "-s",
+                            service_path,
+                            "--reqtype",
+                            "ignition.msgs.EntityFactory",
+                            "--reptype",
+                            "ignition.msgs.Boolean",
+                            "--timeout",
+                            "1000",
+                            "-r",
+                            req_cube_text,
+                        ],
+                        check=False,
+                    )
+                if req_sphere_text is not None:
+                    subprocess.run(
+                        [
+                            ign_path,
+                            "service",
+                            "-s",
+                            service_path,
+                            "--reqtype",
+                            "ignition.msgs.EntityFactory",
+                            "--reptype",
+                            "ignition.msgs.Boolean",
+                            "--timeout",
+                            "1000",
+                            "-r",
+                            req_sphere_text,
+                        ],
+                        check=False,
+                    )
+                spawned = True
+                self._log("info", "Spawned demo models via ign service")
+            except Exception as exc:
+                self._log("warn", f"ign service spawn attempt failed: {exc}")
+        else:
+            # Try ROS2 /spawn_entity if available
+            try:
+                svc_list = subprocess.check_output(["ros2", "service", "list"], text=True)
+            except Exception:
+                svc_list = ""
+            if "/spawn_entity" in svc_list:
+                try:
+                    # Use helper to spawn only prepared models (positions stored in self.spawned_models)
+                    if "demo_cube" in self.spawned_models:
+                        p = self.spawned_models["demo_cube"]
+                        self._spawn_entity("demo_cube", cube_sdf, p[0], p[1], p[2])
+                    if "demo_sphere" in self.spawned_models:
+                        p = self.spawned_models["demo_sphere"]
+                        self._spawn_entity("demo_sphere", sphere_sdf, p[0], p[1], p[2])
+                    spawned = True
+                    self._log("info", "Spawned demo models via ros2 /spawn_entity")
+                except Exception as exc:
+                    self._log("warn", f"ROS2 spawn_entity call failed: {exc}")
+            else:
+                # Fallback to gz CLI if available
+                gz_path = shutil.which("gz")
+                if gz_path is not None:
+                    try:
+                        import tempfile
+
+                        # Use helper to spawn per-model files only for prepared models
+                        if "demo_cube" in self.spawned_models:
+                            with tempfile.NamedTemporaryFile("w", suffix=".sdf", delete=False) as f_cube:
+                                f_cube.write(cube_sdf)
+                                cube_file = f_cube.name
+                            p = self.spawned_models["demo_cube"]
+                            subprocess.run([gz_path, "model", "--spawn-file", cube_file, "--name", "demo_cube", "--pose", f"{p[0]},{p[1]},{p[2]},0,0,0"], check=False)
+                        if "demo_sphere" in self.spawned_models:
+                            with tempfile.NamedTemporaryFile("w", suffix=".sdf", delete=False) as f_sphere:
+                                f_sphere.write(sphere_sdf)
+                                sphere_file = f_sphere.name
+                            p = self.spawned_models["demo_sphere"]
+                            subprocess.run([gz_path, "model", "--spawn-file", sphere_file, "--name", "demo_sphere", "--pose", f"{p[0]},{p[1]},{p[2]},0,0,0"], check=False)
+                        spawned = True
+                        self._log("info", "Spawned demo models via gz CLI")
+                    except Exception as exc:
+                        self._log("warn", f"gz CLI spawn attempt failed: {exc}")
+                else:
+                    self._log("warn", "No spawn method available; demo models not spawned")
+
+        if spawned:
+            self._log("info", "Spawned demo cube and sphere (spawn method used if available)")
+        else:
+            self._log("warn", "Demo models were not spawned; pick will use stored positions only.")
+
+    def _spawn_entity(self, name: str, sdf: str, x: float, y: float, z: float) -> bool:
+        # Spawn single entity using ign -> ros2 /spawn_entity -> gz CLI
+        spawned = False
+        ign_path = shutil.which("ign")
+        if ign_path:
+            try:
+                import re
+
+                try:
+                    svc_list = subprocess.check_output([ign_path, "service", "-l"], text=True)
+                    m = re.search(r"(/world/[^\s]*/create)", svc_list)
+                    service_path = m.group(1) if m else "/world/default/create"
+                except Exception:
+                    service_path = "/world/default/create"
+
+                safe_sdf = sdf.replace('"', '\\"')
+                req_text = f'sdf: "{safe_sdf}"\nname: "{name}"\npose {{ position {{ x: {x} y: {y} z: {z} }} }}'
+                subprocess.run(
+                    [
+                        ign_path,
+                        "service",
+                        "-s",
+                        service_path,
+                        "--reqtype",
+                        "ignition.msgs.EntityFactory",
+                        "--reptype",
+                        "ignition.msgs.Boolean",
+                        "--timeout",
+                        "1000",
+                        "-r",
+                        req_text,
+                    ],
+                    check=False,
+                )
+                spawned = True
+            except Exception as exc:
+                self._log("warn", f"ign spawn failed: {exc}")
+        else:
+            try:
+                svc_list = subprocess.check_output(["ros2", "service", "list"], text=True)
+            except Exception:
+                svc_list = ""
+            if "/spawn_entity" in svc_list:
+                try:
+                    cmd = (
+                        "ros2 service call /spawn_entity gz_msgs/srv/SpawnEntity '{name: \"" + name + "\", xml: \"" + sdf + "\", initial_pose: {position: {x: " + str(x) + ", y: " + str(y) + ", z: " + str(z) + "}}}'"
+                    )
+                    subprocess.run(cmd, shell=True, check=False)
+                    spawned = True
+                except Exception as exc:
+                    self._log("warn", f"ROS2 spawn_entity failed: {exc}")
+            else:
+                gz_path = shutil.which("gz")
+                if gz_path is not None:
+                    try:
+                        import tempfile
+
+                        with tempfile.NamedTemporaryFile("w", suffix=".sdf", delete=False) as f:
+                            f.write(sdf)
+                            fname = f.name
+                        subprocess.run([gz_path, "model", "--spawn-file", fname, "--name", name, "--pose", f"{x},{y},{z},0,0,0"], check=False)
+                        spawned = True
+                    except Exception as exc:
+                        self._log("warn", f"gz spawn failed: {exc}")
+        return spawned
+
+    
+
+    def place(self):
+        # Move to MoveIt named state 'rock_storage'
+        if not self.done.is_set():
+            self._log('warn', 'Still executing.')
+            return
+        self.done.clear()
+        constraints = Constraints()
+        # joint values from SRDF group_state 'rock_storage'
+        rock = {
+            'joint_0': 2.3038,
+            'joint_1': -1.4567,
+            'joint_2': 1.299,
+            'joint_3': 0.0,
+            'joint_4': 0.0,
+            'joint_5': 0.0,
+        }
+        for jn, val in rock.items():
+            constraints.joint_constraints.append(joint_constraint(jn, val, 0.03))
+        self._log('info', 'Placing -> moving to rock_storage pose')
+        self._send_constraints(constraints)
+
     def set_gripper(self, opening: float):
         opening = max(GRIPPER_MIN, min(GRIPPER_MAX, opening))
         if not self.hand_done.is_set():
@@ -1918,10 +2246,11 @@ class TeleopGui:
         xyz.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
         tk.Label(xyz, text="Step").grid(row=0, column=0, sticky="w")
         tk.Entry(xyz, textvariable=self.xyz_step_var, width=8).grid(row=0, column=1, sticky="w")
-        tk.Button(xyz, text="Back", width=8, command=lambda: self._move_xyz(+1, 0, 0, "Back")).grid(row=1, column=1, pady=4)
-        tk.Button(xyz, text="Forward", width=8, command=lambda: self._move_xyz(-1, 0, 0, "Forward")).grid(row=3, column=1, pady=4)
-        tk.Button(xyz, text="Left", width=8, command=lambda: self._move_xyz(0, -1, 0, "Left")).grid(row=2, column=0, padx=4)
-        tk.Button(xyz, text="Right", width=8, command=lambda: self._move_xyz(0, +1, 0, "Right")).grid(row=2, column=2, padx=4)
+        # Remap directional buttons so labels match actual movement in the robot frame
+        tk.Button(xyz, text="Back", width=8, command=lambda: self._move_xyz(0, +1, 0, "Back")).grid(row=1, column=1, pady=4)
+        tk.Button(xyz, text="Forward", width=8, command=lambda: self._move_xyz(0, -1, 0, "Forward")).grid(row=3, column=1, pady=4)
+        tk.Button(xyz, text="Left", width=8, command=lambda: self._move_xyz(+1, 0, 0, "Left")).grid(row=2, column=0, padx=4)
+        tk.Button(xyz, text="Right", width=8, command=lambda: self._move_xyz(-1, 0, 0, "Right")).grid(row=2, column=2, padx=4)
         tk.Button(xyz, text="+Z", width=8, command=lambda: self._move_xyz(0, 0, +1, "+Z up")).grid(row=1, column=3, padx=(12, 0))
         tk.Button(xyz, text="-Z", width=8, command=lambda: self._move_xyz(0, 0, -1, "-Z down")).grid(row=3, column=3, padx=(12, 0))
 
@@ -1978,6 +2307,8 @@ class TeleopGui:
 
         actions = tk.LabelFrame(main, text="Actions", padx=10, pady=10)
         actions.pack(fill=tk.X, pady=(0, 12))
+        tk.Button(actions, text="Spawn Demo", width=12, command=self.node.spawn_demo_objects).pack(side=tk.LEFT)
+        tk.Button(actions, text="Place", width=12, command=self.node.place).pack(side=tk.LEFT, padx=6)
         tk.Button(actions, text="Home", width=12, command=self.node.go_home).pack(side=tk.LEFT)
         tk.Button(actions, text="Refresh Status", width=14, command=self.node.print_status).pack(side=tk.LEFT, padx=6)
         tk.Button(actions, text="Quit", width=12, command=self.close).pack(side=tk.RIGHT)
@@ -2164,6 +2495,7 @@ def main():
         app._append_log("[INFO] 6DOF pose teleop GUI ready.")
         root.mainloop()
     finally:
+        node.stop_tool_frame_publisher()
         node.destroy_node()
         rclpy.shutdown()
         spin_thread.join(timeout=1.0)

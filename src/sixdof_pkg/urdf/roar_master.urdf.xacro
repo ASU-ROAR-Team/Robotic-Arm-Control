@@ -2,7 +2,7 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="sixdof_pkg">
   <xacro:macro name="roar_robot" params="left_tip_mesh right_tip_mesh tip_mesh_scale:='1 1 1' right_tip_inertial_xyz:='0.0068713052626298 -0.0445833101194902 -0.00459919711816914' right_tip_mass:='0.166407572042252' right_tip_ixx:='0.000213014948987788' right_tip_ixy:='5.00427651888554E-06' right_tip_ixz:='1.31813153465416E-05' right_tip_iyy:='0.000193114100344925' right_tip_iyz:='-1.33531855818173E-05' right_tip_izz:='0.000283278991020372' right_tip_joint_xyz:='-0.0855 0.0175 0.1025' right_tip_joint_rpy:='-1.5708 3.280703 1.5708' right_tip_joint_axis:='0 0 1' right_tip_visual_rpy:='0 0 0' left_tip_inertial_xyz:='0.0203533878633443 -0.0405588468256447 -0.00445450235082778' left_tip_mass:='0.170173837073524' left_tip_ixx:='0.000210272947967754' left_tip_ixy:='8.64628656310733E-06' left_tip_ixz:='1.62782094288307E-05' left_tip_iyy:='0.000199729468619081' left_tip_iyz:='-8.68134344198002E-06' left_tip_izz:='0.000285711709281424' left_tip_joint_xyz:='0.0165 -0.0175 0.1025' left_tip_joint_rpy:='-1.5708 -0.13911 1.5708' left_tip_joint_axis:='0 0 -1'">
     <material name="black">
-      <color rgba="0.1 0.1 0.1 1" />
+      <color rgba="0.18 0.18 0.22 1" />
     </material>
     <material name="light_grey">
       <color rgba="0.894117647058823 0.894117647058823 0.894117647058823 1" />
@@ -274,7 +274,7 @@
       <limit lower="0.0" upper="0.08" effort="40.0" velocity="0.2" />
     </joint>
 
-    <gazebo reference="base_link"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>
+    <gazebo reference="base_link"><visual><material><ambient>0.18 0.18 0.22 1</ambient><diffuse>0.18 0.18 0.22 1</diffuse></material></visual></gazebo>
     <gazebo reference="link_1"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
     <gazebo reference="link_2"><visual><material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse></material></visual></gazebo>
     <gazebo reference="link_3"><visual><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></gazebo>

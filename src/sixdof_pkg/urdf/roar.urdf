@@ -388,4 +388,12 @@
       <parameters>package://sixdof_moveit/config/ros2_controllers.yaml</parameters>
     </plugin>
   </gazebo>
+  <!-- Single tool_frame for the current tip variant (sampling) attached to link_6
+       so the frame moves with the end-effector. Origin is in metres. -->
+  <link name="tool_frame"/>
+  <joint name="link_6_to_tool_frame" type="fixed">
+    <parent link="link_6"/>
+    <child link="tool_frame"/>
+    <origin xyz="0 -0.00608 0.16385" rpy="0 0 0"/>
+  </joint>
 </robot>
