@@ -11,6 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -27,7 +28,7 @@ endif()
 # Compile the hardware interface library
 add_library(roar_hardware SHARED src/roar_hardware_interface.cpp)
 target_include_directories(roar_hardware PRIVATE include)
-ament_target_dependencies(roar_hardware rclcpp hardware_interface pluginlib sensor_msgs)
+ament_target_dependencies(roar_hardware rclcpp hardware_interface pluginlib sensor_msgs std_msgs)
 
 # Export the plugin description
 pluginlib_export_plugin_description_file(hardware_interface roar_hardware.xml)

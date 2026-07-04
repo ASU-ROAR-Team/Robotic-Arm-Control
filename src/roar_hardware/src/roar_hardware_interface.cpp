@@ -3,7 +3,6 @@
 #include <cmath>
 
 // --- GRIPPER TUNING PARAMETERS ---
-// Change these to calibrate your servo limits without recompiling the whole workspace
 #define GRIPPER_URDF_MIN_M  0.0     // Meters (from URDF)
 #define GRIPPER_URDF_MAX_M  0.08    // Meters (from URDF)
 #define GRIPPER_SERVO_MIN_DEG 0.0   // Physical Servo Min
@@ -19,22 +18,47 @@ hardware_interface::CallbackReturn RoarHardwareInterface::on_init(
     return hardware_interface::CallbackReturn::ERROR;
   }
 
-  // Allocate storage for 8 joints (6 arm joints + 2 gripper joints)
   hw_states_.resize(info_.joints.size(), 0.0);
   hw_commands_.resize(info_.joints.size(), 0.0);
+  latest_arm_fb_.resize(6, 0.0);
 
-  // Set up the internal publisher node
   pub_node_ = std::make_shared<rclcpp::Node>("roar_hardware_interface_node");
   
-  // Apply Best Effort QoS profile
+  // Best Effort QoS profile for micro-ROS
   rclcpp::QoS qos_profile(10);
   qos_profile.best_effort();
 
-  // Change topic name to fk_joint_states
-  joint_state_pub_ = pub_node_->create_publisher<sensor_msgs::msg::JointState>(
-    "fk_joint_states", qos_profile);
+  // Initialize Publishers
+  arm_cmd_pub_ = pub_node_->create_publisher<std_msgs::msg::Float32MultiArray>(
+    "roar_robot_arm/joint_cmd", qos_profile);
+  ee_cmd_pub_ = pub_node_->create_publisher<std_msgs::msg::Float32>(
+    "roar_robot_ee/joint_cmd", qos_profile);
+
+  // Initialize Subscribers
+  arm_fb_sub_ = pub_node_->create_subscription<std_msgs::msg::Float32MultiArray>(
+    "roar_robot_arm/joint_feedback", qos_profile,
+    std::bind(&RoarHardwareInterface::arm_feedback_cb, this, std::placeholders::_1));
+  ee_fb_sub_ = pub_node_->create_subscription<std_msgs::msg::Float32>(
+    "roar_robot_ee/joint_feedback", qos_profile,
+    std::bind(&RoarHardwareInterface::ee_feedback_cb, this, std::placeholders::_1));
 
   return hardware_interface::CallbackReturn::SUCCESS;
+}
+
+void RoarHardwareInterface::arm_feedback_cb(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(fb_mutex_);
+  if (msg->data.size() >= 6) {
+    latest_arm_fb_ = msg->data;
+    received_arm_fb_ = true;
+  }
+}
+
+void RoarHardwareInterface::ee_feedback_cb(const std_msgs::msg::Float32::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(fb_mutex_);
+  latest_ee_fb_ = msg->data;
+  received_ee_fb_ = true;
 }
 
 hardware_interface::CallbackReturn RoarHardwareInterface::on_configure(
@@ -66,73 +90,114 @@ std::vector<hardware_interface::CommandInterface> RoarHardwareInterface::export_
 hardware_interface::CallbackReturn RoarHardwareInterface::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  // Set initial commands to current states to prevent jerky startups
   for (size_t i = 0; i < hw_states_.size(); i++) {
     hw_commands_[i] = hw_states_[i];
   }
+
+  // Spin up the background thread to handle incoming micro-ROS feedback
+  executor_.add_node(pub_node_);
+  executor_thread_ = std::make_unique<std::thread>([this]() {
+    executor_.spin();
+  });
+
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::CallbackReturn RoarHardwareInterface::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  // Safely shut down the executor thread
+  executor_.cancel();
+  if (executor_thread_ && executor_thread_->joinable()) {
+    executor_thread_->join();
+  }
+  executor_.remove_node(pub_node_);
+  
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::return_type RoarHardwareInterface::read(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  // THE MIRROR EFFECT: Because we are running open-loop (no live encoder feedback yet),
-  // we must tell MoveIt that the robot successfully reached the commanded positions.
-  for (size_t i = 0; i < hw_commands_.size(); i++) {
-    hw_states_[i] = hw_commands_[i];
+  std::vector<float> arm_fb(6, 0.0);
+  float ee_fb = 0.0;
+  bool arm_valid, ee_valid;
+
+  // Safely copy the latest data from the subscriber thread
+  {
+    std::lock_guard<std::mutex> lock(fb_mutex_);
+    arm_fb = latest_arm_fb_;
+    ee_fb = latest_ee_fb_;
+    arm_valid = received_arm_fb_;
+    ee_valid = received_ee_fb_;
   }
+
+  const double deg_to_rad = M_PI / 180.0;
+
+  if (arm_valid) {
+    // Standard Arm Joints (Degrees -> Radians)
+    hw_states_[0] = arm_fb[0] * deg_to_rad;
+    hw_states_[1] = arm_fb[1] * deg_to_rad;
+    hw_states_[2] = arm_fb[2] * deg_to_rad;
+    hw_states_[3] = arm_fb[3] * deg_to_rad;
+
+    // Differential Gear Inverse Kinematics
+    double j4_deg = (arm_fb[4] + arm_fb[5]) / 2.0;
+    double j5_deg = (arm_fb[4] - arm_fb[5]) / 2.0;
+    hw_states_[4] = j4_deg * deg_to_rad;
+    hw_states_[5] = j5_deg * deg_to_rad;
+  }
+
+  if (ee_valid) {
+    // Gripper Mapping (Servo Degrees -> Meters)
+    double gripper_m = GRIPPER_URDF_MIN_M + 
+      ((ee_fb - GRIPPER_SERVO_MIN_DEG) / (GRIPPER_SERVO_MAX_DEG - GRIPPER_SERVO_MIN_DEG)) * (GRIPPER_URDF_MAX_M - GRIPPER_URDF_MIN_M);
+
+    hw_states_[6] = gripper_m; // left_gripper
+    hw_states_[7] = gripper_m; // right_gripper
+  } else {
+    // Fallback: If no EE feedback yet, keep state mirrored to initial command so MoveIt doesn't jump
+    hw_states_[6] = hw_commands_[6];
+    hw_states_[7] = hw_commands_[7];
+  }
+
   return hardware_interface::return_type::OK;
 }
 
 hardware_interface::return_type RoarHardwareInterface::write(
-  const rclcpp::Time & time, const rclcpp::Duration & /*period*/)
+  const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  sensor_msgs::msg::JointState msg;
-  msg.header.stamp = time;
-
   const double rad_to_deg = 180.0 / M_PI;
 
-  // 1. Standard Arm Joints (URDF indexes 0, 1, 2, 3)
-  double j0_deg = hw_commands_[0] * rad_to_deg;
-  double j1_deg = hw_commands_[1] * rad_to_deg;
-  double j2_deg = hw_commands_[2] * rad_to_deg;
-  double j3_deg = hw_commands_[3] * rad_to_deg;
+  // 1. Standard Arm Joints
+  float j0_deg = hw_commands_[0] * rad_to_deg;
+  float j1_deg = hw_commands_[1] * rad_to_deg;
+  float j2_deg = hw_commands_[2] * rad_to_deg;
+  float j3_deg = hw_commands_[3] * rad_to_deg;
 
-  // 2. Differential Gear Joints (URDF indexes 4 & 5)
+  // 2. Differential Gear Joints
   double theta_4_deg = hw_commands_[4] * rad_to_deg;
   double theta_5_deg = hw_commands_[5] * rad_to_deg;
 
-  // Mechanical reduction = 1
-  double diff_motor_1_deg = theta_4_deg + theta_5_deg;
-  double diff_motor_2_deg = theta_4_deg - theta_5_deg;
+  float diff_motor_1_deg = theta_4_deg + theta_5_deg;
+  float diff_motor_2_deg = theta_4_deg - theta_5_deg;
 
-  // 3. Gripper Mapping (MoveIt controls both left [6] and right [7], we just need one)
-  double commanded_m = hw_commands_[6]; // Using left_gripper as the reference
+  // 3. Populate Arm Command Message
+  std_msgs::msg::Float32MultiArray arm_msg;
+  arm_msg.data = {j0_deg, j1_deg, j2_deg, j3_deg, diff_motor_1_deg, diff_motor_2_deg};
+  arm_cmd_pub_->publish(arm_msg);
 
-  // Clamp the command to URDF limits just in case
+  // 4. Gripper Mapping
+  double commanded_m = hw_commands_[6];
   commanded_m = std::max((double)GRIPPER_URDF_MIN_M, std::min(commanded_m, (double)GRIPPER_URDF_MAX_M));
 
-  // Linear interpolation: Meters -> Servo Degrees
-  double gripper_servo_deg = GRIPPER_SERVO_MIN_DEG + 
+  float gripper_servo_deg = GRIPPER_SERVO_MIN_DEG + 
     ((commanded_m - GRIPPER_URDF_MIN_M) / (GRIPPER_URDF_MAX_M - GRIPPER_URDF_MIN_M)) * (GRIPPER_SERVO_MAX_DEG - GRIPPER_SERVO_MIN_DEG);
 
-  // 4. Populate and Publish
-  msg.name = {
-    "motor_0", "motor_1", "motor_2", "motor_3", 
-    "diff_motor_1", "diff_motor_2", "gripper_servo"
-  };
-  msg.position = {
-    j0_deg, j1_deg, j2_deg, j3_deg, 
-    diff_motor_1_deg, diff_motor_2_deg, gripper_servo_deg
-  };
-
-  joint_state_pub_->publish(msg);
+  // 5. Populate EE Command Message
+  std_msgs::msg::Float32 ee_msg;
+  ee_msg.data = gripper_servo_deg;
+  ee_cmd_pub_->publish(ee_msg);
 
   return hardware_interface::return_type::OK;
 }
