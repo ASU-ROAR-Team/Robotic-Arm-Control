@@ -119,46 +119,10 @@ hardware_interface::CallbackReturn RoarHardwareInterface::on_deactivate(
 hardware_interface::return_type RoarHardwareInterface::read(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  std::vector<float> arm_fb(6, 0.0);
-  float ee_fb = 0.0;
-  bool arm_valid, ee_valid;
-
-  // Safely copy the latest data from the subscriber thread
-  {
-    std::lock_guard<std::mutex> lock(fb_mutex_);
-    arm_fb = latest_arm_fb_;
-    ee_fb = latest_ee_fb_;
-    arm_valid = received_arm_fb_;
-    ee_valid = received_ee_fb_;
-  }
-
-  const double deg_to_rad = M_PI / 180.0;
-
-  if (arm_valid) {
-    // Standard Arm Joints (Degrees -> Radians)
-    hw_states_[0] = arm_fb[0] * deg_to_rad;
-    hw_states_[1] = arm_fb[1] * deg_to_rad;
-    hw_states_[2] = arm_fb[2] * deg_to_rad;
-    hw_states_[3] = arm_fb[3] * deg_to_rad;
-
-    // Differential Gear Inverse Kinematics
-    double j4_deg = (arm_fb[4] + arm_fb[5]) / 2.0;
-    double j5_deg = (arm_fb[4] - arm_fb[5]) / 2.0;
-    hw_states_[4] = j4_deg * deg_to_rad;
-    hw_states_[5] = j5_deg * deg_to_rad;
-  }
-
-  if (ee_valid) {
-    // Gripper Mapping (Servo Degrees -> Meters)
-    double gripper_m = GRIPPER_URDF_MIN_M + 
-      ((ee_fb - GRIPPER_SERVO_MIN_DEG) / (GRIPPER_SERVO_MAX_DEG - GRIPPER_SERVO_MIN_DEG)) * (GRIPPER_URDF_MAX_M - GRIPPER_URDF_MIN_M);
-
-    hw_states_[6] = gripper_m; // left_gripper
-    hw_states_[7] = gripper_m; // right_gripper
-  } else {
-    // Fallback: If no EE feedback yet, keep state mirrored to initial command so MoveIt doesn't jump
-    hw_states_[6] = hw_commands_[6];
-    hw_states_[7] = hw_commands_[7];
+  // Ignore incoming physical hardware feedback to avoid latency issues.
+  // Instead, perfectly mirror the commanded positions to the current states.
+  for (size_t i = 0; i < hw_states_.size(); i++) {
+    hw_states_[i] = hw_commands_[i];
   }
 
   return hardware_interface::return_type::OK;
